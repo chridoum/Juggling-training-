@@ -24,12 +24,15 @@ export async function saveVideo(id, blob) {
 }
 
 // Renvoie un Blob/File, ou null si la vidéo est introuvable.
-export async function loadVideo(id) {
+// Le fichier OPFS n'a pas de type : on le rétablit pour que le téléchargement garde la bonne extension.
+const typed = (f, mime) => (f && mime && f.type !== mime ? new Blob([f], { type: mime }) : f);
+
+export async function loadVideo(id, mime) {
   if (hasOpfs()) {
-    try { return await (await (await dir()).getFileHandle(id)).getFile(); } catch { /* absent */ }
+    try { return typed(await (await (await dir()).getFileHandle(id)).getFile(), mime); } catch { /* absent */ }
   }
   const row = await db.get('blobs', id);
-  return row ? row.blob : null;
+  return row ? typed(row.blob, mime) : null;
 }
 
 export async function deleteVideo(id) {

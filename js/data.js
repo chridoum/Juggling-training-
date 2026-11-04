@@ -1,6 +1,6 @@
 // Opérations sur les agrès et les figures, au-dessus du stockage brut.
 import * as db from './db.js';
-import { CATALOG, CATALOG_VERSION } from './catalog.js';
+import { CATALOG, CATALOG_VERSION, CATEGORIES, defaultCategory } from './catalog.js';
 import * as media from './media.js';
 
 export async function listAgres() {
@@ -37,8 +37,10 @@ export async function addFromCatalog(key) {
     description: '',
     tags: [...def.tags],
     sources: def.sources.map(s => ({ ...s })),
+    categories: (CATEGORIES[def.key] || []).map(name => ({ id: db.uid(), name })),
     order: count,
   });
+  const catId = n => (agres.categories.find(c => c.name === n) || {}).id || null;
 
   const idByName = {};
   const figs = def.figures.map(f => {
@@ -55,6 +57,7 @@ export async function addFromCatalog(key) {
       notes: '',
       status: 'decouvrir',
       fromCatalog: true,
+      categoryId: catId(defaultCategory(def.key, f.name)),
     };
     idByName[f.name] = fig.id;
     return fig;
@@ -82,8 +85,17 @@ export async function syncCatalog() {
   for (const a of agresList) {
     const def = CATALOG.find(c => c.key === a.catalogKey);
     if (!def) continue;
+    if (!a.categories) {
+      a.categories = (CATEGORIES[a.catalogKey] || []).map(name => ({ id: db.uid(), name }));
+      await db.put('agres', a);
+    }
+    const catId = n => (a.categories.find(c => c.name === n) || {}).id || null;
     const figs = await figuresOf(a.id);
     for (const fig of figs) {
+      if (fig.categoryId === undefined) {
+        fig.categoryId = catId(defaultCategory(a.catalogKey, fig.name));
+        await db.put('figures', fig);
+      }
       const ref = def.figures.find(f => f.name === fig.name);
       if (!ref) continue;
       let changed = false;
@@ -149,10 +161,10 @@ export async function startSession(figureId) {
 }
 
 // Enregistre le clip (fiche + vidéo). figureId null = « À trier ».
-export async function addClip({ blob, figureId, sessionId, duration, bpm, metro, thumb, mime }) {
+export async function addClip({ blob, figureId, agresId: forcedAgres, sessionId, duration, bpm, metro, thumb, mime }) {
   const id = db.uid();
   await media.saveVideo(id, blob);
-  let agresId = null;
+  let agresId = forcedAgres || null;
   if (figureId) { const f = await db.get('figures', figureId); agresId = f ? f.agresId : null; }
   return db.put('clips', {
     id, figureId: figureId || null, agresId, sessionId: sessionId || null,
@@ -171,8 +183,8 @@ export async function clipsOfFigure(figureId) {
 
 export async function setClipFigure(clip, figureId) {
   clip.figureId = figureId || null;
-  clip.agresId = null;
-  if (figureId) { const f = await db.get('figures', figureId); clip.agresId = f ? f.agresId : null; }
+  // Sans figure, le clip garde son agrès : il reste « à trier » dans cet agrès.
+  if (figureId) { const f = await db.get('figures', figureId); clip.agresId = f ? f.agresId : clip.agresId; }
   return db.put('clips', clip);
 }
 

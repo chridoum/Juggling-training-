@@ -126,6 +126,11 @@ export async function figureForm({ id = null, agresId = null }) {
         <label for="ss">Siteswap <span class="muted">(facultatif)</span></label>
         <input class="input" id="ss" value="${esc(f.siteswap)}" placeholder="Ex. : 531" inputmode="text" autocapitalize="off" spellcheck="false">
       </div>` : ''}
+      ${(a.categories || []).length ? `<div class="field">
+        <label for="cat">Catégorie</label>
+        <select class="input" id="cat"><option value="">— Aucune —</option>
+          ${a.categories.map(c => `<option value="${c.id}" ${f.categoryId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+      </div>` : ''}
       <div class="field">
         <span class="label">Niveau</span>
         <div class="level-picker" id="level">
@@ -216,6 +221,7 @@ export async function figureForm({ id = null, agresId = null }) {
       aliases: splitList(v.querySelector('#aliases').value),
       siteswap: v.querySelector('#ss') ? v.querySelector('#ss').value.trim() : f.siteswap,
       level, status,
+      categoryId: v.querySelector('#cat') ? v.querySelector('#cat').value || null : (f.categoryId || null),
       tags: splitList(v.querySelector('#tags').value),
       prereq: [...v.querySelectorAll('.check input:checked')].map(i => i.value),
       links,

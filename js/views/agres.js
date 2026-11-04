@@ -1,5 +1,6 @@
 // Vues : liste des agrès, ajout, modification, liste des figures d'un agrès.
 import * as db from '../db.js';
+import { allClips } from '../data.js';
 import { CATALOG, ICONS, STATUSES, statusLabel } from '../catalog.js';
 import { listAgres, countFigures, figuresOf, addFromCatalog, deleteAgres } from '../data.js';
 import { setView, esc, ICON, toast, confirmBox, levelDots, splitList } from '../ui.js';
@@ -86,6 +87,12 @@ export async function agresForm(id = null) {
         <input class="input" id="tags" value="${esc((a.tags || []).join(', '))}" placeholder="rotation, lancer, contact">
         <span class="hint">Sépare les tags par des virgules. Ils servent à filtrer les figures.</span>
       </div>
+      <div class="field">
+        <span class="label">Catégories <span class="muted">(facultatif)</span></span>
+        <span class="hint">Pour ranger les figures : « 3 balles », « 2 poi », « Contact »…</span>
+        <div class="list" id="cats"></div>
+        <button type="button" class="btn ghost" id="addCat">${ICON.plus} Ajouter une catégorie</button>
+      </div>
       ${id ? '<button type="button" class="btn danger block" id="del">Supprimer cet agrès</button>' : ''}
     </form>`;
 
@@ -94,6 +101,18 @@ export async function agresForm(id = null) {
     back: id ? `#/agres/${id}` : '#/agres/nouveau', tab: 'agres', body,
     fab: { label: 'Enregistrer', onClick: () => v.querySelector('#f').requestSubmit() },
   });
+
+  const catsEl = v.querySelector('#cats');
+  const addCatRow = (c = { id: db.uid(), name: '' }) => {
+    const row = document.createElement('div');
+    row.className = 'link-edit'; row.dataset.id = c.id;
+    row.innerHTML = `<input class="input c-name" maxlength="40" placeholder="Nom de la catégorie" value="${esc(c.name)}">
+      <button type="button" class="icon-btn" aria-label="Retirer cette catégorie">${ICON.trash}</button>`;
+    row.querySelector('button').onclick = () => row.remove();
+    catsEl.appendChild(row);
+  };
+  (a.categories || []).forEach(addCatRow);
+  v.querySelector('#addCat').onclick = () => { addCatRow(); catsEl.lastElementChild.querySelector('input').focus(); };
 
   let icon = a.icon;
   v.querySelectorAll('#icons button').forEach(b => {
@@ -111,6 +130,7 @@ export async function agresForm(id = null) {
       name, icon,
       description: v.querySelector('#desc').value.trim(),
       tags: splitList(v.querySelector('#tags').value),
+      categories: [...catsEl.querySelectorAll('.link-edit')].map(r => ({ id: r.dataset.id, name: r.querySelector('.c-name').value.trim() })).filter(c => c.name),
     });
     if (!a.id) {
       a.id = db.uid();
@@ -144,13 +164,22 @@ export async function agresDetail(id) {
   const a = await db.get('agres', id);
   if (!a) return notFound();
   const figs = await figuresOf(id);
-  const st = viewState[id] || (viewState[id] = { q: '', status: 'all', tag: null });
+  const st = viewState[id] || (viewState[id] = { q: '', status: 'all', tag: null, cat: null });
 
+  const cats = a.categories || [];
+  const catName = Object.fromEntries(cats.map(c => [c.id, c.name]));
+  const toSort = (await allClips()).filter(c => c.agresId === id && !c.figureId).length;
   const tagsUsed = [...new Set(figs.flatMap(f => f.tags || []))].sort((x, y) => x.localeCompare(y, 'fr'));
 
   const body = `
     ${a.description ? `<p class="muted">${esc(a.description)}</p>` : ''}
     <input class="search" id="q" type="search" placeholder="Chercher une figure" value="${esc(st.q)}" aria-label="Chercher une figure">
+    ${toSort ? `<a class="row" href="#/journal?tri=${id}" style="margin:12px 0 0"><span class="row-thumb" aria-hidden="true">📥</span><span class="row-main"><span class="row-title">${toSort} clip${toSort > 1 ? 's' : ''} à trier</span><span class="row-sub">Rattache-les à une figure</span></span>${ICON.chev}</a>` : ''}
+    ${cats.length ? `<div class="chips" id="catChips" role="group" aria-label="Filtrer par catégorie">
+      <button class="chip" data-c="" aria-pressed="${!st.cat}">Toutes catégories</button>
+      ${cats.map(c => `<button class="chip" data-c="${c.id}" aria-pressed="${st.cat === c.id}">${esc(c.name)}</button>`).join('')}
+      <button class="chip" data-c="none" aria-pressed="${st.cat === 'none'}">Sans catégorie</button>
+    </div>` : ''}
     <div class="chips" id="statusChips" role="group" aria-label="Filtrer par statut">
       <button class="chip" data-s="all" aria-pressed="${st.status === 'all'}">Toutes</button>
       ${STATUSES.map(s => `<button class="chip" data-s="${s.key}" aria-pressed="${st.status === s.key}">${s.label}</button>`).join('')}
@@ -170,6 +199,7 @@ export async function agresDetail(id) {
     const q = st.q.toLowerCase();
     const shown = figs
       .filter(f => st.status === 'all' || f.status === st.status)
+      .filter(f => !st.cat || (st.cat === 'none' ? !f.categoryId || !catName[f.categoryId] : f.categoryId === st.cat))
       .filter(f => !st.tag || (f.tags || []).includes(st.tag))
       .filter(f => !q || [f.name, ...(f.aliases || []), f.siteswap || ''].some(x => x.toLowerCase().includes(q)))
       .sort((x, y) => (x.level - y.level) || x.name.localeCompare(y.name, 'fr'));
@@ -179,7 +209,7 @@ export async function agresDetail(id) {
         <span class="row-thumb" aria-hidden="true">${esc(a.icon)}</span>
         <span class="row-main">
           <span class="row-title">${esc(f.name)}</span>
-          <span class="row-sub">${levelDots(f.level)}${f.siteswap ? ` · ${esc(f.siteswap)}` : ''}${(f.aliases || []).length ? ` · ${esc(f.aliases[0])}` : ''}</span>
+          <span class="row-sub">${levelDots(f.level)}${catName[f.categoryId] ? ` · ${esc(catName[f.categoryId])}` : ''}${f.siteswap ? ` · ${esc(f.siteswap)}` : ''}${(f.aliases || []).length ? ` · ${esc(f.aliases[0])}` : ''}</span>
         </span>
         <span class="status s-${f.status}">${statusLabel(f.status)}</span>
       </a>`).join('') : figs.length
@@ -189,6 +219,13 @@ export async function agresDetail(id) {
   render();
 
   v.querySelector('#q').oninput = e => { st.q = e.target.value; render(); };
+  v.querySelectorAll('#catChips .chip').forEach(c => {
+    c.onclick = () => {
+      st.cat = c.dataset.c || null;
+      v.querySelectorAll('#catChips .chip').forEach(x => x.setAttribute('aria-pressed', x === c));
+      render();
+    };
+  });
   v.querySelectorAll('#statusChips .chip').forEach(c => {
     c.onclick = () => {
       st.status = c.dataset.s;

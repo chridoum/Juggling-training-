@@ -8,14 +8,15 @@ import { notFound } from './agres.js';
 const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const MARKS = { ok: '👍 Propre', revoir: '🔁 À revoir' };
 
-export function clipRow(c, fById = {}, withFigure = true) {
+export function clipRow(c, fById = {}, withFigure = true, aById = {}) {
   const f = c.figureId ? fById[c.figureId] : null;
+  const ag = c.agresId ? aById[c.agresId] : null;
   const d = new Date(c.createdAt);
   const when = `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
   return `<a class="row" href="#/clip/${c.id}">
     ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="">` : '<span class="row-thumb" aria-hidden="true">🎞️</span>'}
     <span class="row-main">
-      <span class="row-title">${withFigure ? esc(f ? f.name : 'À trier') : esc(when)}</span>
+      <span class="row-title">${withFigure ? esc(f ? f.name : ag ? `À trier · ${ag.name}` : 'À trier') : esc(when)}</span>
       <span class="row-sub">${withFigure ? esc(when) + ' · ' : ''}${fmtDur(c.duration || 0)}${c.bpm ? ` · ${c.bpm} BPM` : ''}</span>
     </span>
     ${c.mark ? `<span class="mark m-${c.mark}">${MARKS[c.mark].split(' ')[0]}</span>` : ''}
@@ -23,11 +24,14 @@ export function clipRow(c, fById = {}, withFigure = true) {
 }
 
 // ---------- Journal ----------
-export async function journal(onlyInbox = false) {
-  const [clips, figures] = await Promise.all([allClips(), db.all('figures')]);
+export async function journal(onlyInbox = false, agresId = null) {
+  const [clips, figures, agres] = await Promise.all([allClips(), db.all('figures'), db.all('agres')]);
   const fById = Object.fromEntries(figures.map(f => [f.id, f]));
-  const inbox = clips.filter(c => !c.figureId).length;
-  const list = onlyInbox ? clips.filter(c => !c.figureId) : clips;
+  const aById = Object.fromEntries(agres.map(a => [a.id, a]));
+  const inboxAll = clips.filter(c => !c.figureId);
+  const inbox = inboxAll.length;
+  const list = onlyInbox ? inboxAll.filter(c => !agresId || c.agresId === agresId) : clips;
+  const perAgres = agres.map(a => ({ a, n: inboxAll.filter(c => c.agresId === a.id).length })).filter(x => x.n);
 
   const days = [];
   for (const c of list) {
@@ -42,9 +46,13 @@ export async function journal(onlyInbox = false) {
       <a class="chip" href="#/journal" aria-pressed="${!onlyInbox}">Tous (${clips.length})</a>
       <a class="chip" href="#/journal?tri" aria-pressed="${onlyInbox}">À trier (${inbox})</a>
     </div>
+    ${onlyInbox && (perAgres.length > 1 || agresId) ? `<div class="chips">
+      <a class="chip" href="#/journal?tri" aria-pressed="${!agresId}">Tous les agrès</a>
+      ${perAgres.map(({ a, n }) => `<a class="chip" href="#/journal?tri=${a.id}" aria-pressed="${agresId === a.id}">${esc(a.icon)} ${esc(a.name)} (${n})</a>`).join('')}
+    </div>` : ''}
     ${days.length ? days.map(g => `
       <h3 class="section-title" style="text-transform:capitalize">${esc(g.key)}</h3>
-      <div class="list">${g.items.map(c => clipRow(c, fById)).join('')}</div>`).join('')
+      <div class="list">${g.items.map(c => clipRow(c, fById, true, aById)).join('')}</div>`).join('')
       : `<div class="empty"><strong>${onlyInbox ? 'Rien à trier' : 'Aucun clip pour l\'instant'}</strong>${onlyInbox ? 'Tous tes clips sont rattachés à une figure.' : 'Lance un entraînement pour filmer ton premier clip.'}</div>`}`;
 
   setView({
@@ -54,7 +62,7 @@ export async function journal(onlyInbox = false) {
 }
 
 // ---------- Choix d'une figure (boîte de dialogue) ----------
-async function pickFigure() {
+async function pickFigure(agresId = null) {
   const [figures, agres] = await Promise.all([db.all('figures'), db.all('agres')]);
   const aById = Object.fromEntries(agres.map(a => [a.id, a]));
   const d = document.getElementById('modal');
@@ -66,7 +74,7 @@ async function pickFigure() {
   return new Promise(resolve => {
     const render = () => {
       const q = d.querySelector('#pq').value.trim().toLowerCase();
-      const list = figures.filter(f => !q || (f.name + ' ' + (f.aliases || []).join(' ')).toLowerCase().includes(q)).sort(byName).slice(0, 40);
+      const list = figures.filter(f => !q || (f.name + ' ' + (f.aliases || []).join(' ')).toLowerCase().includes(q)).sort((x, y) => ((y.agresId === agresId) - (x.agresId === agresId)) || byName(x, y)).slice(0, 40);
       d.querySelector('#pl').innerHTML =
         `<button class="pick" data-id="">📥 Aucune (à trier)</button>` +
         list.map(f => `<button class="pick" data-id="${f.id}">${esc((aById[f.agresId] || {}).icon || '')} ${esc(f.name)} <small>${esc((aById[f.agresId] || {}).name || '')}</small></button>`).join('');
@@ -84,7 +92,7 @@ export async function clipView(id) {
   const c = await db.get('clips', id);
   if (!c) return notFound();
   const fig = c.figureId ? await db.get('figures', c.figureId) : null;
-  const file = await media.loadVideo(id);
+  const file = await media.loadVideo(id, c.mime);
   const url = file ? URL.createObjectURL(file) : null;
 
   const d = new Date(c.createdAt);
@@ -117,7 +125,7 @@ export async function clipView(id) {
     </div>`;
 
   const v = setView({
-    title: fig ? fig.name : 'Clip', back: fig ? `#/figure/${fig.id}` : '#/journal?tri', tab: 'journal', body,
+    title: fig ? fig.name : 'Clip', back: fig ? `#/figure/${fig.id}` : (c.agresId ? `#/journal?tri=${c.agresId}` : '#/journal?tri'), tab: 'journal', body,
   });
   onLeave(() => { if (url) URL.revokeObjectURL(url); });
 
@@ -140,7 +148,7 @@ export async function clipView(id) {
   });
   v.querySelector('#note').onchange = async e => { c.note = e.target.value; await db.put('clips', c); toast('Note enregistrée'); };
   v.querySelector('#assign').onclick = async () => {
-    const chosen = await pickFigure();
+    const chosen = await pickFigure(c.agresId);
     if (chosen === undefined) return;
     await setClipFigure(c, chosen || null);
     toast(chosen ? 'Clip rattaché' : 'Clip remis dans « À trier »');

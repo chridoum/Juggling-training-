@@ -24,8 +24,9 @@ const routes = [
   [/^#\/figure\/([^/]+)\/modifier$/, m => figureForm({ id: m[1] })],
   [/^#\/figure\/([^/]+)$/, m => figureDetail(m[1])],
   [/^#\/entrainement$/, () => trainHome()],
+  [/^#\/enregistrer\/a\/([^/]+)$/, m => recorder(m[1], true)],
   [/^#\/enregistrer\/([^/]+)$/, m => recorder(m[1])],
-  [/^#\/journal(\?tri)?$/, m => journal(!!m[1])],
+  [/^#\/journal(\?tri(?:=([^/]+))?)?$/, m => journal(!!m[1], m[2] || null)],
   [/^#\/clip\/([^/]+)$/, m => clipView(m[1])],
 ];
 

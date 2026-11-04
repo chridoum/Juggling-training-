@@ -5,7 +5,24 @@
 // et chaque agrès garde quelques sources générales.
 
 // Version du catalogue : à incrémenter quand on corrige des figures déjà installées
-export const CATALOG_VERSION = 2;
+export const CATALOG_VERSION = 3;
+
+// Catégories proposées par défaut pour les agrès du catalogue (modifiables ensuite).
+export const CATEGORIES = {
+  balles: ['3 balles', '4 balles', '5 balles'],
+  anneaux: ['3 anneaux', '4 anneaux', '5 anneaux'],
+  massues: ['3 massues', '4 massues', '5 massues'],
+  poi: ['1 poi', '2 poi', '3 poi'],
+};
+
+// Catégorie d'une figure du catalogue d'après son nom (null = on ne devine pas).
+export function defaultCategory(key, figName) {
+  const w = { balles: 'balles', anneaux: 'anneaux', massues: 'massues' }[key];
+  if (!w) return null;
+  const m = figName.match(/\b([345])\b/);
+  if (m) return `${m[1]} ${w}`;
+  return key === 'massues' ? null : `3 ${w}`;
+}
 
 export const FAMILIES = {
   lancer: 'Jonglerie de lancer',

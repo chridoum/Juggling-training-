@@ -26,8 +26,15 @@ export async function trainHome() {
   };
 
   const body = `
-    <a class="btn primary big-btn" href="#/enregistrer/libre">🎥 Séance libre</a>
-    <p class="muted small hint">Tu filmes sans choisir de figure : les clips vont dans « À trier ».${inbox ? ` <a href="#/journal?tri">${inbox} à trier</a>` : ''}</p>
+    <h3 class="section-title" style="margin-top:0">Séance libre sur un agrès</h3>
+    <p class="muted small hint" style="margin-top:0">Tu filmes sans choisir de figure : les clips vont dans « À trier » de l'agrès.${inbox ? ` <a href="#/journal?tri">${inbox} à trier</a>` : ''}</p>
+    <div class="list" style="margin-top:10px">${agres.sort((x, y) => (x.order ?? 0) - (y.order ?? 0)).map(a => `
+      <a class="row" href="#/enregistrer/a/${a.id}"><span class="row-thumb" aria-hidden="true">${esc(a.icon)}</span>
+        <span class="row-main"><span class="row-title">${esc(a.name)}</span></span>${ICON.chev}</a>`).join('')
+      || '<div class="empty"><strong>Aucun agrès</strong>Ajoute-en un dans l\'onglet Agrès.</div>'}
+      <a class="row" href="#/enregistrer/libre"><span class="row-thumb" aria-hidden="true">🎥</span>
+        <span class="row-main"><span class="row-title">Sans agrès</span><span class="row-sub">À classer plus tard</span></span>${ICON.chev}</a>
+    </div>
 
     ${recent.length ? `<h3 class="section-title">Reprendre</h3><div class="list">${recent.map(id => row(fById[id])).join('')}</div>` : ''}
 
@@ -59,11 +66,12 @@ function loadPrefs() {
 }
 function savePrefs(p) { try { localStorage.setItem('juglog.rec', JSON.stringify(p)); } catch { /* ignoré */ } }
 
-export async function recorder(target) {
-  const figureId = target === 'libre' ? null : target;
+export async function recorder(target, byAgres = false) {
+  const figureId = (target === 'libre' || byAgres) ? null : target;
   const fig = figureId ? await db.get('figures', figureId) : null;
   if (figureId && !fig) { location.hash = '#/entrainement'; return; }
-  const agres = fig ? await db.get('agres', fig.agresId) : null;
+  const agres = fig ? await db.get('agres', fig.agresId) : (byAgres ? await db.get('agres', target) : null);
+  if (byAgres && !agres) { location.hash = '#/entrainement'; return; }
   const P = loadPrefs();
 
   const chips = (name, values, cur, label = v => v) =>
@@ -80,7 +88,7 @@ export async function recorder(target) {
       <button class="icon-btn rec-flip" id="flip" aria-label="Changer de caméra"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3"/></svg></button>
     </div>
 
-    <div class="rec-target">${fig ? `${esc(agres ? agres.icon : '🎯')} <b>${esc(fig.name)}</b>` : '🎥 <b>Séance libre</b> · clips à trier'}</div>
+    <div class="rec-target">${fig ? `${esc(agres ? agres.icon : '🎯')} <b>${esc(fig.name)}</b>` : agres ? `${esc(agres.icon)} <b>Séance libre · ${esc(agres.name)}</b>` : '🎥 <b>Séance libre</b> · sans agrès'}</div>
 
     <div class="card rec-done" id="done" hidden></div>
 
@@ -303,7 +311,7 @@ export async function recorder(target) {
       const metroInfo = P.metroOn
         ? { bpm: P.bpm, beats: P.beats, offsetMs: 0, injected: P.casque }
         : null;
-      lastClip = await addClip({ blob, figureId, sessionId, duration, bpm: P.metroOn ? P.bpm : null, metro: metroInfo, thumb, mime: usedMime });
+      lastClip = await addClip({ blob, figureId, agresId: agres ? agres.id : null, sessionId, duration, bpm: P.metroOn ? P.bpm : null, metro: metroInfo, thumb, mime: usedMime });
       clipN++;
       showDone();
       if (P.metroOn && P.palier) { P.bpm = Math.min(260, P.bpm + P.palier); showBpm(); }
