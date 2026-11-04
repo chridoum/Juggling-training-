@@ -1,7 +1,7 @@
 // Vues : accueil, premier lancement, réglages, écrans à venir.
 import * as db from '../db.js';
 import { CATALOG, FAMILIES, statusLabel } from '../catalog.js';
-import { listAgres, addFromCatalog, exportData, importData } from '../data.js';
+import { listAgres, addFromCatalog, exportData, importData, exportVideos, importVideos, videoStats } from '../data.js';
 import { setView, esc, ICON, toast, levelDots, fmtBytes } from '../ui.js';
 import { applyTheme } from '../theme.js';
 
@@ -88,6 +88,7 @@ export async function welcome() {
 export async function settings() {
   const theme = (await db.getMeta('theme')) || 'dark';
   const info = await db.storageInfo();
+  const vs = await videoStats();
 
   const body = `
     <h2 class="section-title">Affichage</h2>
@@ -119,8 +120,18 @@ export async function settings() {
       <input type="file" id="importFile" accept="application/json,.json" hidden>
     </div>
 
+    <h2 class="section-title">Sauvegarde des vidéos</h2>
+    <div class="card" style="display:grid;gap:10px">
+      <span class="small muted">${vs.n ? `${vs.n} clip${vs.n > 1 ? 's' : ''}, environ ${fmtBytes(vs.bytes)}.` : 'Aucun clip pour l\'instant.'} Les vidéos sont rangées dans des archives .zip d'environ 250 Mo, à garder sur ton ordinateur ou dans ton cloud.</span>
+      <button class="btn" id="expVid" ${vs.n ? '' : 'disabled'}>Exporter les vidéos</button>
+      <label class="btn ghost" for="impVid">Importer des vidéos (.zip)</label>
+      <input type="file" id="impVid" accept=".zip,application/zip" multiple hidden>
+      <span class="small muted" id="vidMsg"></span>
+      <span class="small muted">Pour tout restaurer sur un téléphone neuf : importe d'abord la sauvegarde des fiches, puis les archives de vidéos.</span>
+    </div>
+
     <h2 class="section-title">À propos</h2>
-    <div class="card small muted">Juglog · étape 1 (bibliothèques d'agrès et de figures)<br>Le logo : une cruche arrose un vieux tronc, et une pousse grandit à l'autre bout.</div>`;
+    <div class="card small muted">Juglog<br>Le logo : une cruche arrose un vieux tronc, et une pousse grandit à l'autre bout.</div>`;
 
   const v = setView({ title: 'Réglages', back: '#/', tab: 'home', body });
 
@@ -152,6 +163,35 @@ export async function settings() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     await db.setMeta('lastExport', Date.now());
     toast('Sauvegarde exportée');
+  };
+
+  const msg = v.querySelector('#vidMsg');
+  v.querySelector('#expVid').onclick = async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const parts = await exportVideos((i, n) => { msg.textContent = `Préparation… ${i}/${n}`; });
+      for (const [i, part] of parts.entries()) {
+        const url = URL.createObjectURL(part.blob);
+        const a = document.createElement('a'); a.href = url; a.download = part.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        msg.textContent = `Archive ${i + 1}/${parts.length} envoyée (${part.count} clips)`;
+        await new Promise(r => setTimeout(r, 1500));
+        URL.revokeObjectURL(url);
+      }
+      await db.setMeta('lastExportVideos', Date.now());
+      msg.textContent = `${parts.length} archive${parts.length > 1 ? 's' : ''} enregistrée${parts.length > 1 ? 's' : ''} dans les téléchargements.`;
+    } catch (err) { console.error(err); msg.textContent = 'Échec de l\'export : ' + (err.message || err); }
+    btn.disabled = false;
+  };
+  v.querySelector('#impVid').onchange = async e => {
+    const files = [...e.target.files];
+    if (!files.length) return;
+    msg.textContent = 'Import en cours…';
+    try {
+      const r = await importVideos(files);
+      msg.textContent = `${r.restored} vidéo${r.restored > 1 ? 's' : ''} restaurée${r.restored > 1 ? 's' : ''}${r.skipped ? `, ${r.skipped} ignorée${r.skipped > 1 ? 's' : ''} (importe d'abord les fiches)` : ''}.`;
+    } catch (err) { msg.textContent = err.message || 'Archive illisible'; }
+    e.target.value = '';
   };
 
   v.querySelector('#importFile').onchange = async e => {

@@ -3,7 +3,8 @@ import * as db from '../db.js';
 import { STATUSES, statusLabel } from '../catalog.js';
 import { figuresOf, deleteFigure, clipsOfFigure } from '../data.js';
 import { clipRow } from './journal.js';
-import { setView, esc, ICON, toast, confirmBox, levelDots, splitList, hostOf, byName } from '../ui.js';
+import { parseSiteswap, mountSiteswap } from '../siteswap.js';
+import { setView, onLeave, esc, ICON, toast, confirmBox, levelDots, splitList, hostOf, byName } from '../ui.js';
 import { notFound } from './agres.js';
 
 // ---------- Fiche figure ----------
@@ -16,11 +17,18 @@ export async function figureDetail(id) {
   const prereq = (f.prereq || []).map(p => byId[p]).filter(Boolean);
   const next = siblings.filter(s => (s.prereq || []).includes(f.id)).sort(byName);
 
-  const visual = f.siteswap && a.family === 'lancer'
-    ? `<div class="visual"><span class="big" aria-hidden="true">${esc(a.icon)}</span>
-         <span>L'animation du siteswap <b>${esc(f.siteswap)}</b> arrivera à l'étape 5.</span></div>`
+  const ss = f.siteswap ? parseSiteswap(f.siteswap) : null;
+  const visual = ss && ss.ok
+    ? `<div class="ss-box">
+         <canvas id="ssc" height="230" aria-label="Animation du siteswap ${esc(f.siteswap)}"></canvas>
+         <div class="ss-bar">
+           <button class="btn" id="ssPlay" aria-label="Pause">⏸</button>
+           <div class="chips" id="ssSpeed" style="padding:0;flex:1">${[0.25, 0.5, 1, 1.5].map(x => `<button class="chip" data-v="${x}" aria-pressed="${x === 1}">×${x}</button>`).join('')}</div>
+         </div>
+         <p class="muted small ss-note">Siteswap <b>${esc(f.siteswap)}</b> · ${ss.balls} balle${ss.balls > 1 ? 's' : ''}. L'animation montre le motif de lancers ; elle ne reproduit pas la chorégraphie des mains.</p>
+       </div>`
     : `<div class="visual"><span class="big" aria-hidden="true">${esc(a.icon)}</span>
-         <span>Filme-toi : tes clips de cette figure s'afficheront plus bas.</span></div>`;
+         <span>${ss ? `Siteswap ${esc(f.siteswap)} : ${esc(ss.error)}.` : 'Filme-toi : tes clips de cette figure s\'afficheront plus bas.'}</span></div>`;
 
   const clips = await clipsOfFigure(id);
   const ytQuery = encodeURIComponent(`${(f.aliases || [])[0] || f.name} ${a.name} tutorial`);
@@ -78,6 +86,18 @@ export async function figureDetail(id) {
     fab: { label: 'Filmer cette figure', icon: ICON.plus, onClick: () => { location.hash = `#/enregistrer/${id}`; } },
   });
 
+  const cv = v.querySelector('#ssc');
+  if (cv) {
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(cv.clientWidth * dpr); cv.height = Math.round(230 * dpr);
+    const anim = mountSiteswap(cv, ss);
+    onLeave(() => anim.destroy());
+    v.querySelector('#ssPlay').onclick = e => { e.currentTarget.textContent = anim.toggle() ? '⏸' : '▶'; };
+    v.querySelectorAll('#ssSpeed .chip').forEach(c => {
+      c.onclick = () => { anim.setRate(+c.dataset.v); v.querySelectorAll('#ssSpeed .chip').forEach(x => x.setAttribute('aria-pressed', x === c)); };
+    });
+  }
+
   v.querySelectorAll('#status button').forEach(b => {
     b.onclick = async () => {
       f.status = b.dataset.s;
@@ -125,6 +145,7 @@ export async function figureForm({ id = null, agresId = null }) {
       ${showSiteswap ? `<div class="field">
         <label for="ss">Siteswap <span class="muted">(facultatif)</span></label>
         <input class="input" id="ss" value="${esc(f.siteswap)}" placeholder="Ex. : 531" inputmode="text" autocapitalize="off" spellcheck="false">
+        <span class="hint" id="ssMsg"></span>
       </div>` : ''}
       ${(a.categories || []).length ? `<div class="field">
         <label for="cat">Catégorie</label>
@@ -172,6 +193,15 @@ export async function figureForm({ id = null, agresId = null }) {
     back: id ? `#/figure/${id}` : `#/agres/${agresId}`, tab: 'agres', body,
     fab: { label: 'Enregistrer', onClick: () => v.querySelector('#f').requestSubmit() },
   });
+
+  const ssIn = v.querySelector('#ss');
+  if (ssIn) {
+    const check = () => {
+      const r = ssIn.value.trim() ? parseSiteswap(ssIn.value) : null;
+      v.querySelector('#ssMsg').textContent = !r ? '' : r.ok ? `✓ Valide · ${r.balls} balle${r.balls > 1 ? 's' : ''}` : `✗ ${r.error}`;
+    };
+    ssIn.oninput = check; check();
+  }
 
   let level = f.level;
   v.querySelectorAll('#level button').forEach(b => {

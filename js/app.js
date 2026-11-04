@@ -6,7 +6,8 @@ import { home, welcome, settings } from './views/home.js';
 import { agresList, agresNew, agresForm, agresDetail, notFound } from './views/agres.js';
 import { figureDetail, figureForm } from './views/figure.js';
 import { trainHome, recorder } from './views/train.js';
-import { journal, journalHome, journalAgres, journalFigure, clipView } from './views/journal.js';
+import { compare } from './views/compare.js';
+import { journal, journalSeances, journalSeance, journalHome, journalAgres, journalFigure, clipView } from './views/journal.js';
 
 // Thème appliqué avant tout rendu, pour éviter un flash clair
 try { applyTheme(localStorage.getItem('theme') || 'dark'); } catch { applyTheme('dark'); }
@@ -27,9 +28,12 @@ const routes = [
   [/^#\/enregistrer\/a\/([^/]+)$/, m => recorder(m[1], true)],
   [/^#\/enregistrer\/([^/]+)$/, m => recorder(m[1])],
   [/^#\/journal$/, () => journalHome()],
+  [/^#\/journal\/seances$/, () => journalSeances()],
+  [/^#\/journal\/s\/([^/]+)$/, m => journalSeance(m[1])],
   [/^#\/journal\/a\/([^/]+)$/, m => journalAgres(m[1])],
   [/^#\/journal\/f\/([^/]+)$/, m => journalFigure(m[1])],
   [/^#\/journal(\?tri(?:=([^/]+))?)?$/, m => journal(!!m[1], m[2] || null)],
+  [/^#\/comparer\/([^/]+)\/([^/]+)$/, m => compare(m[1], m[2])],
   [/^#\/clip\/([^/]+)$/, m => clipView(m[1])],
 ];
 

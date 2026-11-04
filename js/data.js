@@ -2,6 +2,7 @@
 import * as db from './db.js';
 import { CATALOG, CATALOG_VERSION, CATEGORIES, defaultCategory } from './catalog.js';
 import * as media from './media.js';
+import { buildZip, readZip } from './zip.js';
 
 export async function listAgres() {
   const list = await db.all('agres');
@@ -191,4 +192,52 @@ export async function setClipFigure(clip, figureId) {
 export async function deleteClip(id) {
   await media.deleteVideo(id);
   await db.del('clips', id);
+}
+
+// ---------- Sauvegarde des vidéos (archives .zip d'environ 250 Mo) ----------
+const PART_BYTES = 250 * 1024 * 1024;
+
+export async function videoStats() {
+  const clips = await db.all('clips');
+  return { n: clips.length, bytes: clips.reduce((a, c) => a + (c.size || 0), 0) };
+}
+
+// Découpe en archives numérotées ; renvoie [{ name, blob, count }]
+export async function exportVideos(onProgress = () => {}) {
+  const clips = (await db.all('clips')).sort((a, b) => a.createdAt - b.createdAt);
+  const day = new Date().toISOString().slice(0, 10);
+  const parts = [];
+  let cur = [], curBytes = 0, done = 0;
+  const flush = async () => {
+    if (!cur.length) return;
+    const n = parts.length + 1;
+    parts.push({ name: `juglog-videos-${day}-${n}.zip`, blob: await buildZip(cur), count: cur.length });
+    cur = []; curBytes = 0;
+  };
+  for (const c of clips) {
+    const file = await media.loadVideo(c.id, c.mime);
+    done++; onProgress(done, clips.length);
+    if (!file) continue;
+    const ext = (c.mime || '').includes('mp4') ? 'mp4' : 'webm';
+    if (curBytes + file.size > PART_BYTES && cur.length) await flush();
+    cur.push({ name: `clips/${c.id}.${ext}`, blob: file }); curBytes += file.size;
+  }
+  await flush();
+  return parts;
+}
+
+// Remet les vidéos d'archives Juglog ; ignore celles dont la fiche n'est pas (encore) importée.
+export async function importVideos(files) {
+  const known = new Set((await db.all('clips')).map(c => c.id));
+  let restored = 0, skipped = 0;
+  for (const f of files) {
+    for (const e of await readZip(f)) {
+      const id = e.name.split('/').pop().replace(/\.[^.]+$/, '');
+      if (!known.has(id)) { skipped++; continue; }
+      const clip = await db.get('clips', id);
+      await media.saveVideo(id, new Blob([e.blob], { type: clip.mime || e.blob.type }));
+      restored++;
+    }
+  }
+  return { restored, skipped };
 }

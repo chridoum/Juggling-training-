@@ -450,3 +450,23 @@ body.rec-mode #view { padding-bottom: 130px; }
 .pl-ab .btn { padding: 0 4px; font-size: 14px; min-height: 48px; }
 .pl-ab .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .ex-row { padding: 8px 8px 8px 6px; gap: 6px; }
+
+/* ---------- Comparaison ---------- */
+.cmp-pane { margin-bottom: 14px; }
+.cmp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.cmp-name { font-weight: 650; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-change { min-height: 40px; padding: 0 14px; font-size: 14px; }
+.cmp .pl-stage video { max-height: 30vh; }
+.cmp-row { display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 8px; margin-top: 4px; }
+.cmp-time { font-variant-numeric: tabular-nums; font-size: 14px; }
+.cmp-seek { width: 100%; accent-color: var(--accent); height: 40px; margin: 0; }
+.cmp-mark { min-height: 44px; padding: 0 10px; font-size: 14px; }
+.clip-pick { display: flex; align-items: center; gap: 10px; }
+.clip-pick small { display: block; margin: 0; }
+
+/* ---------- Animation siteswap ---------- */
+.ss-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.ss-box canvas { width: 100%; height: 230px; display: block; border-radius: var(--radius-sm); background: var(--surface-2); }
+.ss-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.ss-bar .btn { min-width: 64px; padding: 0 12px; }
+.ss-note { margin: 8px 2px 0; }
