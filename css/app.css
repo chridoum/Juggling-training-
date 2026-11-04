@@ -431,3 +431,4 @@ body.rec-mode #view { padding-bottom: 130px; }
 .rec-btn span { width: 58px; height: 58px; border-radius: 50%; background: #e53935; transition: all .15s; }
 .rec-btn.on span { width: 34px; height: 34px; border-radius: 8px; }
 .rec-btn:disabled { opacity: .35; }
+.pick.create { border-color: var(--accent); color: var(--accent); font-weight: 650; }

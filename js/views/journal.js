@@ -62,26 +62,53 @@ export async function journal(onlyInbox = false, agresId = null) {
 }
 
 // ---------- Choix d'une figure (boîte de dialogue) ----------
+// Si le clip a un agrès, seules ses figures sont proposées ; on peut aussi en créer une à la volée.
 async function pickFigure(agresId = null) {
   const [figures, agres] = await Promise.all([db.all('figures'), db.all('agres')]);
   const aById = Object.fromEntries(agres.map(a => [a.id, a]));
+  let ag = agresId && aById[agresId] ? agresId : null;
+  const fixed = !!ag; // agrès imposé par le clip
   const d = document.getElementById('modal');
   d.innerHTML = `
-    <h3>Rattacher à une figure</h3>
-    <input id="pq" class="input" type="search" placeholder="Chercher…" autocomplete="off">
+    <h3>${fixed ? `Figure · ${esc(aById[ag].name)}` : 'Rattacher à une figure'}</h3>
+    ${fixed ? '' : '<div class="chips" id="pa" style="padding-top:0"></div>'}
+    <input id="pq" class="input" type="search" placeholder="Chercher ou nommer une nouvelle figure…" autocomplete="off">
     <div class="pick-list" id="pl"></div>
-    <div class="btn-row"><button class="btn" value="cancel">Annuler</button></div>`;
+    <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Annuler</button></div>`;
   return new Promise(resolve => {
+    const done = v => { d.close(); resolve(v); };
     const render = () => {
-      const q = d.querySelector('#pq').value.trim().toLowerCase();
-      const list = figures.filter(f => !q || (f.name + ' ' + (f.aliases || []).join(' ')).toLowerCase().includes(q)).sort((x, y) => ((y.agresId === agresId) - (x.agresId === agresId)) || byName(x, y)).slice(0, 40);
-      d.querySelector('#pl').innerHTML =
-        `<button class="pick" data-id="">📥 Aucune (à trier)</button>` +
-        list.map(f => `<button class="pick" data-id="${f.id}">${esc((aById[f.agresId] || {}).icon || '')} ${esc(f.name)} <small>${esc((aById[f.agresId] || {}).name || '')}</small></button>`).join('');
-      d.querySelectorAll('.pick').forEach(b => { b.onclick = () => { d.close(); resolve(b.dataset.id); }; });
+      const raw = d.querySelector('#pq').value.trim();
+      const q = raw.toLowerCase();
+      if (!fixed) {
+        d.querySelector('#pa').innerHTML = agres.map(a =>
+          `<button class="chip" data-a="${a.id}" aria-pressed="${ag === a.id}">${esc(a.icon)} ${esc(a.name)}</button>`).join('');
+        d.querySelectorAll('#pa .chip').forEach(c => { c.onclick = () => { ag = ag === c.dataset.a ? null : c.dataset.a; render(); }; });
+      }
+      const list = figures.filter(f => (!ag || f.agresId === ag) && (!q || (f.name + ' ' + (f.aliases || []).join(' ')).toLowerCase().includes(q)))
+        .sort(byName).slice(0, 40);
+      const exact = figures.some(f => f.agresId === ag && f.name.toLowerCase() === q);
+      let html = `<button class="pick" data-id="">📥 Aucune (à trier)</button>`;
+      if (raw && ag && !exact) html += `<button class="pick create" data-new="1">➕ Créer « ${esc(raw)} » dans ${esc(aById[ag].name)}</button>`;
+      else if (raw && !ag) html += `<small class="muted" style="padding:6px">Choisis un agrès ci-dessus pour créer « ${esc(raw)} ».</small>`;
+      html += list.map(f => `<button class="pick" data-id="${f.id}">${esc((aById[f.agresId] || {}).icon || '')} ${esc(f.name)}${fixed ? '' : ` <small>${esc((aById[f.agresId] || {}).name || '')}</small>`}</button>`).join('');
+      if (!list.length && !raw) html += '<small class="muted" style="padding:6px">Aucune figure : tape un nom pour en créer une.</small>';
+      d.querySelector('#pl').innerHTML = html;
+      d.querySelectorAll('.pick').forEach(b => {
+        b.onclick = async () => {
+          if (b.dataset.new) {
+            const f = await db.put('figures', {
+              id: db.uid(), agresId: ag, name: raw, aliases: [], siteswap: '', level: 1, tags: [],
+              prereq: [], links: [], notes: '', status: 'decouvrir', categoryId: null,
+            });
+            return done(f.id);
+          }
+          done(b.dataset.id);
+        };
+      });
     };
     d.querySelector('#pq').oninput = render;
-    d.querySelector('[value=cancel]').onclick = () => { d.close(); resolve(undefined); };
+    d.querySelector('[value=cancel]').onclick = () => done(undefined);
     d.oncancel = () => resolve(undefined);
     render(); d.showModal();
   });
