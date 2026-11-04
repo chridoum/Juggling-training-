@@ -45,6 +45,12 @@ export class Metronome {
     this._raf = requestAnimationFrame(tick);
   }
 
+  // Délai (ms) avant le prochain clic audible, pour situer le début d'un clip dans le rythme.
+  msToNextBeat() {
+    const t = this._queue.length ? this._queue[0].t : this._next;
+    return Math.max(0, (t - this.ctx.currentTime) * 1000);
+  }
+
   stop() {
     this.running = false;
     clearInterval(this._timer);

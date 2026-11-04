@@ -58,7 +58,7 @@ export async function trainHome() {
 
 // ---------- Enregistreur ----------
 const MIMES = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-const DEFAULTS = { bpm: 100, beats: 4, dur: 60, casque: false, metroOn: true, palier: 0, facing: 'environment' };
+const DEFAULTS = { chain: true, bpm: 100, beats: 4, dur: 60, casque: false, metroOn: true, palier: 0, facing: 'environment' };
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function loadPrefs() {
@@ -83,6 +83,7 @@ export async function recorder(target, byAgres = false) {
       <video id="prev" playsinline muted autoplay></video>
       <div class="rec-timer" id="timer">0:00 / ${fmt(P.dur)}</div>
       <div class="rec-beat" id="beat" aria-hidden="true"></div>
+      <div class="rec-cnt" id="cnt"></div>
       <div class="rec-count" id="count" hidden></div>
       <div class="rec-err" id="err" hidden></div>
       <button class="icon-btn rec-flip" id="flip" aria-label="Changer de caméra"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3"/></svg></button>
@@ -107,6 +108,9 @@ export async function recorder(target, byAgres = false) {
       </div>
       <div class="opt"><span>Temps par mesure</span><div class="chips">${chips('beats', [1, 2, 3, 4, 6, 8], P.beats)}</div></div>
       <div class="opt"><span>Durée du clip</span><div class="chips">${chips('dur', [30, 60, 120], P.dur, v => v < 60 ? v + ' s' : v / 60 + ' min')}</div></div>
+      <div class="opt"><span>Enchaîner les clips</span><div class="chips">
+        <button class="chip" data-chain="1" aria-pressed="${P.chain}">Oui, jusqu'à l'arrêt</button>
+        <button class="chip" data-chain="0" aria-pressed="${!P.chain}">Un seul clip</button></div></div>
       <div class="opt"><span>Écoute</span><div class="chips">
         <button class="chip" data-casque="0" aria-pressed="${!P.casque}">Haut-parleur</button>
         <button class="chip" data-casque="1" aria-pressed="${P.casque}">Casque</button></div></div>
@@ -200,6 +204,7 @@ export async function recorder(target, byAgres = false) {
   });
   pick('beats', x => { P.beats = +x; metro.beats = P.beats; });
   pick('dur', x => { P.dur = +x; if (!recording) $('#timer').textContent = `0:00 / ${fmt(P.dur)}`; });
+  pick('chain', x => { P.chain = x === '1'; });
   pick('palier', x => { P.palier = +x; });
   pick('casque', x => { P.casque = x === '1'; metro.setRouting({ recording: P.casque }); hint(); });
 
@@ -259,27 +264,49 @@ export async function recorder(target, byAgres = false) {
     counting = false; $('#count').hidden = true; setRecUi(false);
   }
 
-  function beginRecording() {
-    const tracks = [...camStream.getVideoTracks(), ...recDest.stream.getAudioTracks()];
-    const stream = new MediaStream(tracks);
+  // Un clip = un MediaRecorder avec ses propres morceaux. En mode « enchaîner », le suivant démarre
+  // dès que le précédent s'arrête, le métronome continue sans coupure.
+  let cur = null, seq = 0, sessionPromise = null;
+
+  function startClip() {
+    const stream = new MediaStream([...camStream.getVideoTracks(), ...recDest.stream.getAudioTracks()]);
     const mime = MIMES.find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
-    mediaRec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 6_000_000, audioBitsPerSecond: 128_000 });
-    usedMime = (mediaRec.mimeType || mime || 'video/webm').split(';')[0];
-    chunks = []; thumb = null;
-    mediaRec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-    mediaRec.onstop = onStopped;
-    mediaRec.start(1000);
-    startMs = performance.now();
+    const rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 6_000_000, audioBitsPerSecond: 128_000 });
+    const c = {
+      rec, chunks: [], startMs: performance.now(), endMs: 0, thumb: null,
+      mime: (rec.mimeType || mime || 'video/webm').split(';')[0],
+      meta: P.metroOn ? { bpm: P.bpm, beats: P.beats, injected: P.casque, offsetMs: Math.round(metro.msToNextBeat()) } : null,
+    };
+    rec.ondataavailable = e => { if (e.data && e.data.size) c.chunks.push(e.data); };
+    rec.onstop = () => saveClip(c);
+    rec.start(1000);
+    cur = c; seq++;
+  }
+
+  function endClip(c) {
+    c.endMs = performance.now();
+    if (c.rec.state !== 'inactive') c.rec.stop();
+  }
+
+  const nextTempo = () => { if (P.metroOn && P.palier) { P.bpm = Math.min(260, P.bpm + P.palier); showBpm(); } };
+
+  function beginRecording() {
     if (P.metroOn) metro.start(ctx.currentTime + 0.05);
+    seq = 0; clipN = 0; $('#cnt').textContent = '';
+    sessionPromise = null;
+    startClip();
     recording = true; setRecUi(true);
     timerId = setInterval(tick, 100);
   }
 
   function tick() {
-    const s = (performance.now() - startMs) / 1000;
-    $('#timer').textContent = `${fmt(s)} / ${fmt(P.dur)}`;
-    if (!thumb && s >= 1.2) thumb = grabThumb();
-    if (s >= P.dur) stopRecording();
+    const s = (performance.now() - cur.startMs) / 1000;
+    $('#timer').textContent = `${fmt(s)} / ${fmt(P.dur)}${seq > 1 ? ` · clip ${seq}` : ''}`;
+    if (!cur.thumb && s >= 1.2) cur.thumb = grabThumb();
+    if (s >= P.dur) {
+      if (P.chain) { const old = cur; nextTempo(); startClip(); endClip(old); }
+      else stopRecording();
+    }
   }
 
   function grabThumb() {
@@ -296,25 +323,25 @@ export async function recorder(target, byAgres = false) {
     if (!recording) return;
     recording = false; clearInterval(timerId);
     metro.stop();
-    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
-  }
-
-  async function onStopped() {
-    const duration = Math.round(((performance.now() - startMs) / 1000) * 10) / 10;
+    endClip(cur);
+    nextTempo();
     setRecUi(false);
     $('#timer').textContent = `0:00 / ${fmt(P.dur)}`;
-    if (!chunks.length) { toast('Rien d\'enregistré'); return; }
-    const blob = new Blob(chunks, { type: usedMime });
-    chunks = [];
+  }
+
+  async function saveClip(c) {
+    const duration = Math.round(((c.endMs - c.startMs) / 1000) * 10) / 10;
+    // Un clip de moins de 1,5 s (arrêt juste après un enchaînement) n'est pas gardé.
+    if (!c.chunks.length || duration < 1.5) { if (!recording && !clipN) toast('Clip trop court, non gardé'); if (!recording) showDone(); return; }
+    const blob = new Blob(c.chunks, { type: c.mime });
+    c.chunks = [];
     try {
-      if (!sessionId) sessionId = (await startSession(figureId)).id;
-      const metroInfo = P.metroOn
-        ? { bpm: P.bpm, beats: P.beats, offsetMs: 0, injected: P.casque }
-        : null;
-      lastClip = await addClip({ blob, figureId, agresId: agres ? agres.id : null, sessionId, duration, bpm: P.metroOn ? P.bpm : null, metro: metroInfo, thumb, mime: usedMime });
+      if (!sessionPromise) sessionPromise = startSession(figureId);
+      const sessionId = (await sessionPromise).id;
+      lastClip = await addClip({ blob, figureId, agresId: agres ? agres.id : null, sessionId, duration, bpm: c.meta ? c.meta.bpm : null, metro: c.meta, thumb: c.thumb, mime: c.mime });
       clipN++;
-      showDone();
-      if (P.metroOn && P.palier) { P.bpm = Math.min(260, P.bpm + P.palier); showBpm(); }
+      $('#cnt').textContent = `${clipN} clip${clipN > 1 ? 's' : ''} gardé${clipN > 1 ? 's' : ''}`;
+      if (!recording) showDone();
     } catch (err) {
       console.error(err);
       toast('Impossible d\'enregistrer le clip (stockage plein ?)');
@@ -322,30 +349,21 @@ export async function recorder(target, byAgres = false) {
   }
 
   function showDone() {
-    const d = $('#done'); d.hidden = false;
-    const c = lastClip;
+    const d = $('#done');
+    if (!clipN) { d.hidden = true; return; }
+    d.hidden = false;
+    const triHref = fig ? `#/figure/${fig.id}` : agres ? `#/journal?tri=${agres.id}` : '#/journal?tri';
     d.innerHTML = `
-      <div class="done-head"><b>✓ Clip n° ${clipN} enregistré</b><span class="muted small">${fmt(c.duration)}${c.bpm ? ` · ${c.bpm} BPM` : ''}</span></div>
-      <div class="chips">
-        <button class="chip" data-mark="ok" aria-pressed="false">👍 Propre</button>
-        <button class="chip" data-mark="revoir" aria-pressed="false">🔁 À revoir</button>
-      </div>
+      <div class="done-head"><b>✓ ${clipN} clip${clipN > 1 ? 's' : ''} enregistré${clipN > 1 ? 's' : ''}</b><span class="muted small">cette séance</span></div>
       <div class="btn-row">
-        <button class="btn" id="seeClip">Voir</button>
-        <button class="btn danger" id="delClip">Supprimer</button>
-      </div>`;
-    d.querySelectorAll('[data-mark]').forEach(b => {
-      b.onclick = async () => {
-        const on = b.getAttribute('aria-pressed') !== 'true';
-        d.querySelectorAll('[data-mark]').forEach(x => x.setAttribute('aria-pressed', 'false'));
-        b.setAttribute('aria-pressed', on);
-        c.mark = on ? b.dataset.mark : null;
-        await db.put('clips', c);
-      };
-    });
-    $('#seeClip').onclick = () => { location.hash = `#/clip/${c.id}`; };
+        <a class="btn primary" href="${triHref}">${fig ? 'Voir la figure' : 'Les trier'}</a>
+        <button class="btn" id="seeClip">Dernier clip</button>
+      </div>
+      <button class="btn danger" id="delClip">Supprimer le dernier clip</button>`;
+    $('#seeClip').onclick = () => { if (lastClip) location.hash = `#/clip/${lastClip.id}`; };
     $('#delClip').onclick = async () => {
-      await deleteClip(c.id); clipN = Math.max(0, clipN - 1); lastClip = null; d.hidden = true; toast('Clip supprimé');
+      if (!lastClip) return;
+      await deleteClip(lastClip.id); clipN = Math.max(0, clipN - 1); lastClip = null; showDone(); toast('Clip supprimé');
     };
   }
 
@@ -359,7 +377,7 @@ export async function recorder(target, byAgres = false) {
     countTimers.forEach(clearTimeout); clearInterval(timerId);
     try { metro.stop(); } catch { /* ignoré */ }
     // Si on quitte en plein enregistrement, le clip déjà filmé est quand même gardé.
-    if (recording) { recording = false; try { mediaRec.stop(); } catch { /* ignoré */ } }
+    if (recording) { recording = false; try { endClip(cur); } catch { /* ignoré */ } }
     [camStream, micStream].forEach(s => s && s.getTracks().forEach(t => t.stop()));
     try { ctx.close(); } catch { /* ignoré */ }
     if (wake) { try { wake.release(); } catch { /* ignoré */ } }
