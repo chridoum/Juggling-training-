@@ -5,7 +5,7 @@
 
 // Nom historique gardé tel quel : le changer ferait perdre les données déjà enregistrées.
 const DB_NAME = 'carnet-de-jongle';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let dbPromise = null;
 
 function open() {
@@ -24,6 +24,12 @@ function open() {
       if (!db.objectStoreNames.contains('clips')) {
         const s = db.createObjectStore('clips', { keyPath: 'id' });
         s.createIndex('sessionId', 'sessionId');
+      }
+      // v2 : index par figure sur les clips, et magasin de secours pour les vidéos
+      const clipStore = req.transaction.objectStore('clips');
+      if (!clipStore.indexNames.contains('figureId')) clipStore.createIndex('figureId', 'figureId');
+      if (!db.objectStoreNames.contains('blobs')) {
+        db.createObjectStore('blobs', { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains('sessions')) {
         db.createObjectStore('sessions', { keyPath: 'id' });

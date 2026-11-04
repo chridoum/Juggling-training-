@@ -370,3 +370,64 @@ dialog p { margin: 0 0 20px; color: var(--text-2); }
 
 .storage-bar { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .storage-bar i { display: block; height: 100%; background: var(--accent); }
+
+/* ---------- Étape 2 : entraînement, enregistreur, clips ---------- */
+a.chip { display: inline-flex; align-items: center; text-decoration: none; }
+.big-btn { display: flex; width: 100%; min-height: 72px; font-size: 20px; }
+.hint { margin: 8px 2px 0; }
+.clip-thumb { flex: none; width: 78px; height: 52px; object-fit: cover; border-radius: var(--radius-sm); background: var(--surface-2); }
+.mark { flex: none; font-size: 22px; }
+.clip-video { width: 100%; max-height: 62vh; border-radius: var(--radius); background: #000; display: block; }
+textarea.input { min-height: 96px; }
+
+.pick-list { display: grid; gap: 6px; max-height: 50vh; overflow-y: auto; margin: 12px 0; }
+.pick {
+  text-align: left; min-height: 48px; padding: 8px 12px; font: inherit; font-size: 16px;
+  color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
+}
+.pick small { color: var(--text-2); margin-left: 6px; }
+
+/* Mode enregistrement : on libère l'écran, la barre d'onglets disparaît */
+body.rec-mode .tabbar, body.rec-mode .fab-zone { display: none; }
+body.rec-mode #view { padding-bottom: 130px; }
+.rec-stage { position: relative; background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 16 / 9; }
+.rec-stage video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.rec-timer {
+  position: absolute; left: 10px; top: 10px; padding: 4px 12px; border-radius: 99px;
+  background: rgba(0,0,0,.6); color: #fff; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 18px;
+}
+.rec-beat { position: absolute; right: 12px; top: 14px; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,.25); }
+.rec-beat.on { animation: beat .25s ease-out; }
+.rec-beat.on.accent { animation-name: beatAccent; }
+@keyframes beat { from { background: #fff; transform: scale(1.4); } to { background: rgba(255,255,255,.25); transform: scale(1); } }
+@keyframes beatAccent { from { background: var(--accent); transform: scale(1.8); } to { background: rgba(255,255,255,.25); transform: scale(1); } }
+.rec-count { position: absolute; inset: 0; display: grid; place-items: center; font-size: 110px; font-weight: 800; color: #fff; background: rgba(0,0,0,.45); }
+.rec-err { position: absolute; inset: 0; display: grid; place-content: center; gap: 6px; padding: 20px; text-align: center; color: #fff; background: rgba(0,0,0,.8); }
+.rec-err b { display: block; font-size: 18px; }
+.rec-flip { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.55); color: #fff; }
+.rec-target { margin: 12px 2px; font-size: 18px; }
+.rec-panel { display: grid; gap: 14px; }
+.bpm-row { display: grid; grid-template-columns: 1fr 1fr 1.3fr 1fr 1fr; gap: 8px; align-items: center; }
+.bpm-row .btn { padding: 0; min-height: 52px; }
+.bpm { text-align: center; line-height: 1; }
+.bpm b { display: block; font-size: 40px; font-variant-numeric: tabular-nums; }
+.bpm span { font-size: 13px; color: var(--text-2); }
+.rec-panel .btn-row { grid-template-columns: repeat(3, 1fr); }
+.rec-panel .btn-row .btn { padding: 0 6px; font-size: 15px; }
+.rec-panel .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.opt > span { font-size: 14px; color: var(--text-2); }
+.opt .chips { padding-top: 6px; flex-wrap: wrap; overflow: visible; }
+.rec-done { display: grid; gap: 10px; margin-top: 12px; }
+.done-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.rec-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9; display: grid; place-items: center;
+  padding: 12px 0 calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, var(--bg) 40%);
+}
+.rec-btn {
+  width: 84px; height: 84px; border-radius: 50%; padding: 0; cursor: pointer;
+  background: transparent; border: 5px solid var(--text); display: grid; place-items: center;
+}
+.rec-btn span { width: 58px; height: 58px; border-radius: 50%; background: #e53935; transition: all .15s; }
+.rec-btn.on span { width: 34px; height: 34px; border-radius: 8px; }
+.rec-btn:disabled { opacity: .35; }

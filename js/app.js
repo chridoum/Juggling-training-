@@ -2,9 +2,11 @@
 import * as db from './db.js';
 import { applyTheme } from './theme.js';
 import { syncCatalog } from './data.js';
-import { home, welcome, settings, soon } from './views/home.js';
+import { home, welcome, settings } from './views/home.js';
 import { agresList, agresNew, agresForm, agresDetail, notFound } from './views/agres.js';
 import { figureDetail, figureForm } from './views/figure.js';
+import { trainHome, recorder } from './views/train.js';
+import { journal, clipView } from './views/journal.js';
 
 // Thème appliqué avant tout rendu, pour éviter un flash clair
 try { applyTheme(localStorage.getItem('theme') || 'dark'); } catch { applyTheme('dark'); }
@@ -21,8 +23,10 @@ const routes = [
   [/^#\/figure\/nouvelle\/([^/]+)$/, m => figureForm({ agresId: m[1] })],
   [/^#\/figure\/([^/]+)\/modifier$/, m => figureForm({ id: m[1] })],
   [/^#\/figure\/([^/]+)$/, m => figureDetail(m[1])],
-  [/^#\/entrainement$/, () => soon('train')],
-  [/^#\/journal$/, () => soon('journal')],
+  [/^#\/entrainement$/, () => trainHome()],
+  [/^#\/enregistrer\/([^/]+)$/, m => recorder(m[1])],
+  [/^#\/journal(\?tri)?$/, m => journal(!!m[1])],
+  [/^#\/clip\/([^/]+)$/, m => clipView(m[1])],
 ];
 
 async function route() {

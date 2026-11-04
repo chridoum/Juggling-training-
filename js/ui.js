@@ -16,8 +16,14 @@ export const ICON = {
   trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
 };
 
+// Une vue peut enregistrer une fonction de nettoyage (caméra, audio…) appelée quand on la quitte.
+let leaveFn = null;
+export function onLeave(fn) { leaveFn = fn; }
+
 // Affiche une vue : titre, bouton retour, actions en haut, contenu, bouton principal en bas.
 export function setView({ title, back = null, actions = [], body = '', fab = null, tab = null }) {
+  if (leaveFn) { try { leaveFn(); } catch (e) { console.warn(e); } leaveFn = null; }
+  document.body.classList.remove('rec-mode');
   document.getElementById('pageTitle').textContent = title;
   document.title = title === 'Juglog' ? title : `${title} · Juglog`;
 

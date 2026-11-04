@@ -1,7 +1,8 @@
 // Vues : fiche figure et formulaire figure.
 import * as db from '../db.js';
 import { STATUSES, statusLabel } from '../catalog.js';
-import { figuresOf, deleteFigure } from '../data.js';
+import { figuresOf, deleteFigure, clipsOfFigure } from '../data.js';
+import { clipRow } from './journal.js';
 import { setView, esc, ICON, toast, confirmBox, levelDots, splitList, hostOf, byName } from '../ui.js';
 import { notFound } from './agres.js';
 
@@ -19,8 +20,9 @@ export async function figureDetail(id) {
     ? `<div class="visual"><span class="big" aria-hidden="true">${esc(a.icon)}</span>
          <span>L'animation du siteswap <b>${esc(f.siteswap)}</b> arrivera à l'étape 5.</span></div>`
     : `<div class="visual"><span class="big" aria-hidden="true">${esc(a.icon)}</span>
-         <span>Ton clip de référence s'affichera ici une fois l'enregistrement en place.</span></div>`;
+         <span>Filme-toi : tes clips de cette figure s'afficheront plus bas.</span></div>`;
 
+  const clips = await clipsOfFigure(id);
   const ytQuery = encodeURIComponent(`${(f.aliases || [])[0] || f.name} ${a.name} tutorial`);
 
   const body = `
@@ -66,12 +68,14 @@ export async function figureDetail(id) {
     ${f.notes ? `<h3 class="section-title">Notes</h3><div class="card notes">${esc(f.notes)}</div>` : ''}
 
     <h3 class="section-title">Journal des clips</h3>
-    <div class="empty"><strong>Aucun clip pour l'instant</strong>L'enregistrement arrive à l'étape 2.</div>`;
+    ${clips.length
+      ? `<div class="list">${clips.map(c => clipRow(c, {}, false)).join('')}</div>`
+      : '<div class="empty"><strong>Aucun clip pour l\'instant</strong>Touche « Filmer » pour enregistrer ta première minute.</div>'}`;
 
   const v = setView({
     title: f.name, back: `#/agres/${a.id}`, tab: 'agres', body,
     actions: [{ label: 'Modifier la fiche', icon: ICON.edit, onClick: () => { location.hash = `#/figure/${id}/modifier`; } }],
-    fab: { label: 'Modifier la fiche', icon: ICON.edit, onClick: () => { location.hash = `#/figure/${id}/modifier`; } },
+    fab: { label: 'Filmer cette figure', icon: ICON.plus, onClick: () => { location.hash = `#/enregistrer/${id}`; } },
   });
 
   v.querySelectorAll('#status button').forEach(b => {

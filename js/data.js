@@ -1,6 +1,7 @@
 // Opérations sur les agrès et les figures, au-dessus du stockage brut.
 import * as db from './db.js';
 import { CATALOG, CATALOG_VERSION } from './catalog.js';
+import * as media from './media.js';
 
 export async function listAgres() {
   const list = await db.all('agres');
@@ -116,6 +117,7 @@ export async function deleteFigure(id) {
       }
     }
   }
+  for (const c of await db.byIndex('clips', 'figureId', id)) await setClipFigure(c, null);
   await db.del('figures', id);
 }
 
@@ -139,4 +141,42 @@ export async function importData(data) {
   await db.putMany('sessions', data.sessions || []);
   await db.putMany('clips', data.clips || []);
   return { agres: (data.agres || []).length, figures: (data.figures || []).length };
+}
+
+// ---------- Clips et sessions ----------
+export async function startSession(figureId) {
+  return db.put('sessions', { id: db.uid(), figureId: figureId || null, startedAt: Date.now() });
+}
+
+// Enregistre le clip (fiche + vidéo). figureId null = « À trier ».
+export async function addClip({ blob, figureId, sessionId, duration, bpm, metro, thumb, mime }) {
+  const id = db.uid();
+  await media.saveVideo(id, blob);
+  let agresId = null;
+  if (figureId) { const f = await db.get('figures', figureId); agresId = f ? f.agresId : null; }
+  return db.put('clips', {
+    id, figureId: figureId || null, agresId, sessionId: sessionId || null,
+    duration, bpm: bpm || null, metro: metro || null, thumb: thumb || null,
+    mime: mime || blob.type, size: blob.size, mark: null, note: '',
+  });
+}
+
+export async function allClips() {
+  return (await db.all('clips')).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function clipsOfFigure(figureId) {
+  return (await db.byIndex('clips', 'figureId', figureId)).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function setClipFigure(clip, figureId) {
+  clip.figureId = figureId || null;
+  clip.agresId = null;
+  if (figureId) { const f = await db.get('figures', figureId); clip.agresId = f ? f.agresId : null; }
+  return db.put('clips', clip);
+}
+
+export async function deleteClip(id) {
+  await media.deleteVideo(id);
+  await db.del('clips', id);
 }

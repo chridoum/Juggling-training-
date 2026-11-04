@@ -2,7 +2,7 @@
 // Stratégie « réseau d'abord » : en ligne, on récupère toujours la dernière version ;
 // hors ligne, on sert la copie gardée en cache.
 
-const CACHE = 'juglog-v2';
+const CACHE = 'juglog-v3';
 const SHELL = [
   './',
   './index.html',
@@ -14,9 +14,13 @@ const SHELL = [
   './js/ui.js',
   './js/theme.js',
   './js/catalog.js',
+  './js/media.js',
+  './js/metronome.js',
   './js/views/home.js',
   './js/views/agres.js',
   './js/views/figure.js',
+  './js/views/train.js',
+  './js/views/journal.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
