@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Carnet de jongle</title>
+  <meta name="description" content="Entraînement vidéo pour la jonglerie et les flow arts">
+  <meta name="theme-color" content="#121214">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <button class="icon-btn back" id="backBtn" aria-label="Retour" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <h1 id="pageTitle">Carnet de jongle</h1>
+    <div class="topbar-actions" id="topActions"></div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <div class="fab-zone" id="fabZone"></div>
+
+  <nav class="tabbar" aria-label="Navigation principale">
+    <a href="#/" data-tab="home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>
+      <span>Accueil</span>
+    </a>
+    <a href="#/agres" data-tab="agres">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="15" r="3"/><circle cx="17" cy="15" r="3"/><circle cx="12" cy="6" r="3"/></svg>
+      <span>Agrès</span>
+    </a>
+    <a href="#/entrainement" data-tab="train" class="tab-main">
+      <span class="tab-main-dot"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6"/></svg></span>
+      <span>Entraînement</span>
+    </a>
+    <a href="#/journal" data-tab="journal">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
+      <span>Journal</span>
+    </a>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog id="modal"></dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
