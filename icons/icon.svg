@@ -1,7 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="0" fill="#121214"/>
-  <path d="M136 360 C 160 150, 352 150, 376 360" fill="none" stroke="#ff8a3d" stroke-width="18" stroke-linecap="round" stroke-dasharray="2 34" opacity=".8"/>
-  <circle cx="256" cy="176" r="46" fill="#ff8a3d"/>
-  <circle cx="148" cy="330" r="46" fill="#f2f2f4"/>
-  <circle cx="364" cy="330" r="46" fill="#f2f2f4"/>
+  <rect width="512" height="512" fill="#121214"/>
+  <g transform="translate(36 56) scale(0.82)">
+
+  <!-- Eau qui coule de la cruche vers le bout du tronc -->
+  <path d="M238 198 C 244 236, 218 268, 228 318" fill="none" stroke="#5fb8ff" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="205" cy="262" r="6" fill="#5fb8ff"/>
+  <circle cx="244" cy="290" r="5" fill="#5fb8ff"/>
+
+  <!-- Cruche, inclinée -->
+  <g transform="translate(138 150) rotate(68)">
+    <path d="M-44 -26 C -50 -20 -98 -18 -92 22 C -88 46 -60 44 -44 34" fill="none" stroke="#ff8a3d" stroke-width="13" stroke-linecap="round"/>
+    <path d="M-30 -52 L 30 -52 L 46 -26 Q 64 40 32 66 L -32 66 Q -64 40 -46 -26 Z" fill="#ff8a3d"/>
+    <rect x="-36" y="-66" width="72" height="18" rx="9" fill="#ffb27a"/>
+    <path d="M30 -62 L 76 -84 L 72 -64 L 36 -46 Z" fill="#ffb27a"/>
+  </g>
+
+  <!-- Tronc couché -->
+  <rect x="200" y="322" width="250" height="78" rx="39" fill="#9a5a2b"/>
+  <path d="M262 346 H 400 M 286 376 H 424" stroke="#7a431c" stroke-width="7" stroke-linecap="round"/>
+  <ellipse cx="226" cy="361" rx="26" ry="39" fill="#e4a46a"/>
+  <ellipse cx="226" cy="361" rx="14" ry="22" fill="none" stroke="#b9773f" stroke-width="5"/>
+
+  <!-- Pousse à l'autre bout -->
+  <path d="M424 324 C 424 300, 420 284, 426 262" fill="none" stroke="#4cc38a" stroke-width="9" stroke-linecap="round"/>
+  <path d="M424 288 C 398 288, 380 270, 378 250 C 402 248, 420 264, 424 288 Z" fill="#4cc38a"/>
+  <path d="M426 270 C 446 266, 462 248, 462 228 C 440 228, 424 246, 426 270 Z" fill="#6fdca5"/>
+  </g>
 </svg>

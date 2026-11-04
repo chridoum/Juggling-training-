@@ -1,6 +1,6 @@
 {
-  "name": "Carnet de jongle",
-  "short_name": "Jongle",
+  "name": "Juglog",
+  "short_name": "Juglog",
   "description": "Entraînement vidéo pour la jonglerie et les flow arts",
   "lang": "fr",
   "start_url": "./",

@@ -1,6 +1,6 @@
 // Opérations sur les agrès et les figures, au-dessus du stockage brut.
 import * as db from './db.js';
-import { CATALOG } from './catalog.js';
+import { CATALOG, CATALOG_VERSION } from './catalog.js';
 
 export async function listAgres() {
   const list = await db.all('agres');
@@ -50,7 +50,7 @@ export async function addFromCatalog(key) {
       level: f.level || 1,
       tags: f.tags || [],
       prereqNames: f.prereq || [],
-      links: [],
+      links: f.link ? [{ ...f.link }] : [],
       notes: '',
       status: 'decouvrir',
       fromCatalog: true,
@@ -64,6 +64,38 @@ export async function addFromCatalog(key) {
   }
   await db.putMany('figures', figs);
   return agres;
+}
+
+// Met à jour les figures déjà installées quand le catalogue est corrigé :
+// ajoute les liens tutoriels manquants et corrige les siteswaps erronés,
+// sans toucher à ce que l'utilisateur a modifié lui-même.
+const SITESWAP_FIXES = {
+  "Burke's Barrage": { from: '3', to: '423' },
+  "Rubenstein's Revenge": { from: '3', to: '52233' },
+};
+
+export async function syncCatalog() {
+  const done = await db.getMeta('catalogVersion', 1);
+  if (done >= CATALOG_VERSION) return;
+  const agresList = (await db.all('agres')).filter(a => a.catalogKey);
+  for (const a of agresList) {
+    const def = CATALOG.find(c => c.key === a.catalogKey);
+    if (!def) continue;
+    const figs = await figuresOf(a.id);
+    for (const fig of figs) {
+      const ref = def.figures.find(f => f.name === fig.name);
+      if (!ref) continue;
+      let changed = false;
+      if (ref.link && !(fig.links || []).some(l => l.url === ref.link.url)) {
+        fig.links = [{ ...ref.link }, ...(fig.links || [])];
+        changed = true;
+      }
+      const fix = SITESWAP_FIXES[fig.name];
+      if (fix && fig.siteswap === fix.from) { fig.siteswap = fix.to; changed = true; }
+      if (changed) await db.put('figures', fig);
+    }
+  }
+  await db.setMeta('catalogVersion', CATALOG_VERSION);
 }
 
 export async function deleteAgres(id) {
@@ -101,7 +133,7 @@ export async function exportData() {
 }
 
 export async function importData(data) {
-  if (!data || data.app !== 'carnet-de-jongle') throw new Error("Ce fichier n'est pas une sauvegarde du Carnet de jongle.");
+  if (!data || data.app !== 'carnet-de-jongle') throw new Error("Ce fichier n'est pas une sauvegarde de Juglog.");
   await db.putMany('agres', data.agres || []);
   await db.putMany('figures', data.figures || []);
   await db.putMany('sessions', data.sessions || []);

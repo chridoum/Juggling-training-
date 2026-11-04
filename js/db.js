@@ -3,6 +3,7 @@
 // Les vidéos (étape 2) iront dans le système de fichiers privé du navigateur (OPFS) ;
 // ici on ne garde que les fiches.
 
+// Nom historique gardé tel quel : le changer ferait perdre les données déjà enregistrées.
 const DB_NAME = 'carnet-de-jongle';
 const DB_VERSION = 1;
 let dbPromise = null;

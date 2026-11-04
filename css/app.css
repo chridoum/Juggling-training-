@@ -128,6 +128,8 @@ main {
   border: 1px solid var(--accent);
 }
 .hero h2 { margin: 0; font-size: 22px; }
+.hero-logo { grid-template-columns: auto 1fr; align-items: center; gap: 16px; }
+.hero-logo img { border-radius: 16px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .stat { text-align: center; padding: 14px 6px; }
 .stat b { display: block; font-size: 28px; line-height: 1.1; }
@@ -237,7 +239,7 @@ main {
   border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line);
   color: var(--text); text-decoration: none;
 }
-.link-row .host { font-size: 13px; color: var(--text-2); }
+.link-row .host { display: block; font-size: 13px; color: var(--text-2); }
 
 .notes { white-space: pre-wrap; }
 

@@ -1,4 +1,4 @@
-# Carnet de jongle
+# Juglog
 
 Application web installable (PWA) pour s'entraîner à la jonglerie et aux flow arts avec la vidéo : clips courts rangés par agrès et par figure, métronome, bibliothèques de figures.
 

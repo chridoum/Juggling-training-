@@ -25,9 +25,12 @@ export async function home() {
   };
 
   const body = `
-    <div class="hero">
-      <h2>Prêt pour l'entraînement ?</h2>
-      <span class="muted">Choisis une figure en cours ou parcours tes agrès.</span>
+    <div class="hero hero-logo">
+      <img src="icons/icon.svg" alt="" width="64" height="64">
+      <div>
+        <h2>Prêt pour l'entraînement ?</h2>
+        <span class="muted">Choisis une figure en cours ou parcours tes agrès.</span>
+      </div>
     </div>
     <div class="stats" style="margin-top:12px">
       <div class="card stat"><b>${agres.length}</b><span>agrès</span></div>
@@ -42,7 +45,7 @@ export async function home() {
     ${recent.length ? `<h2 class="section-title">Modifiées récemment</h2><div class="list">${recent.map(row).join('')}</div>` : ''}`;
 
   setView({
-    title: 'Carnet de jongle', tab: 'home', body,
+    title: 'Juglog', tab: 'home', body,
     actions: [{ label: 'Réglages', icon: ICON.gear, onClick: () => { location.hash = '#/reglages'; } }],
     fab: { label: 'Voir mes agrès', onClick: () => { location.hash = '#/agres'; } },
   });
@@ -55,7 +58,8 @@ export async function welcome() {
 
   const body = `
     <div class="hero">
-      <h2>Bienvenue !</h2>
+      <img src="icons/icon.svg" alt="Logo Juglog : une cruche arrose un tronc d'où pousse une jeune pousse" width="96" height="96" style="border-radius:20px">
+      <h2>Bienvenue dans Juglog !</h2>
       <span>Coche les agrès que tu travailles. Ils arrivent avec quelques figures de base, que tu pourras modifier. Tes agrès perso se créent ensuite, dans l'onglet Agrès.</span>
     </div>
     ${Object.entries(groups).map(([fam, list]) => `
@@ -66,7 +70,7 @@ export async function welcome() {
     <p class="muted small" style="margin-top:20px">Tout reste sur ton téléphone. Rien n'est envoyé sur internet.</p>`;
 
   const v = setView({
-    title: 'Carnet de jongle', tab: null, body,
+    title: 'Juglog', tab: null, body,
     fab: {
       label: 'Commencer', onClick: async () => {
         const keys = [...v.querySelectorAll('.check input:checked')].map(i => i.value);
@@ -116,7 +120,7 @@ export async function settings() {
     </div>
 
     <h2 class="section-title">À propos</h2>
-    <div class="card small muted">Carnet de jongle · étape 1 (bibliothèques d'agrès et de figures)</div>`;
+    <div class="card small muted">Juglog · étape 1 (bibliothèques d'agrès et de figures)<br>Le logo : une cruche arrose un vieux tronc, et une pousse grandit à l'autre bout.</div>`;
 
   const v = setView({ title: 'Réglages', back: '#/', tab: 'home', body });
 
@@ -141,7 +145,7 @@ export async function settings() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `carnet-de-jongle-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `juglog-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();

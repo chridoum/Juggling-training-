@@ -51,15 +51,15 @@ export async function figureDetail(id) {
     <div class="links">
       ${(f.links || []).map(l => `
         <a class="link-row" href="${esc(l.url)}" target="_blank" rel="noopener">
-          <span class="row-main"><span class="row-title" style="font-size:16px">${esc(l.title || hostOf(l.url))}</span><br><span class="host">${esc(hostOf(l.url))}</span></span>
+          <span class="row-main"><span class="row-title" style="font-size:16px">${esc(l.title || hostOf(l.url))}</span><span class="host">${esc(hostOf(l.url))}</span></span>
           ${ICON.ext}
         </a>`).join('')}
       <a class="link-row" href="https://www.youtube.com/results?search_query=${ytQuery}" target="_blank" rel="noopener">
-        ${ICON.search}<span class="row-main">Chercher un tutoriel sur YouTube</span>${ICON.ext}
+        ${ICON.search}<span class="row-main">${(f.links || []).length ? 'Chercher d\'autres tutoriels sur YouTube' : 'Chercher un tutoriel sur YouTube'}</span>${ICON.ext}
       </a>
       ${(a.sources || []).map(s => `
         <a class="link-row" href="${esc(s.url)}" target="_blank" rel="noopener">
-          <span class="row-main">${esc(s.title)}<br><span class="host">Source générale pour cet agrès</span></span>${ICON.ext}
+          <span class="row-main">${esc(s.title)}<span class="host" style="display:block">Site général pour cet agrès</span></span>${ICON.ext}
         </a>`).join('')}
     </div>
 

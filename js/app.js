@@ -1,6 +1,7 @@
 // Point d'entrée : routeur par ancre (#/...) et démarrage.
 import * as db from './db.js';
 import { applyTheme } from './theme.js';
+import { syncCatalog } from './data.js';
 import { home, welcome, settings, soon } from './views/home.js';
 import { agresList, agresNew, agresForm, agresDetail, notFound } from './views/agres.js';
 import { figureDetail, figureForm } from './views/figure.js';
@@ -46,6 +47,7 @@ window.addEventListener('hashchange', route);
 (async () => {
   const theme = await db.getMeta('theme');
   if (theme) applyTheme(theme);
+  try { await syncCatalog(); } catch (err) { console.warn('Mise à jour du catalogue impossible', err); }
   route();
 })();
 

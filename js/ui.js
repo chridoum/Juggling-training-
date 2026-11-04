@@ -19,7 +19,7 @@ export const ICON = {
 // Affiche une vue : titre, bouton retour, actions en haut, contenu, bouton principal en bas.
 export function setView({ title, back = null, actions = [], body = '', fab = null, tab = null }) {
   document.getElementById('pageTitle').textContent = title;
-  document.title = title === 'Carnet de jongle' ? title : `${title} · Carnet de jongle`;
+  document.title = title === 'Juglog' ? title : `${title} · Juglog`;
 
   const backBtn = document.getElementById('backBtn');
   backBtn.hidden = !back;
