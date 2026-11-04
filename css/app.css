@@ -434,3 +434,19 @@ body.rec-mode #view { padding-bottom: 130px; }
 .pick.create { border-color: var(--accent); color: var(--accent); font-weight: 650; }
 .rec-cnt { position: absolute; left: 10px; bottom: 10px; padding: 2px 10px; border-radius: 99px; background: rgba(0,0,0,.6); color: #fff; font-size: 14px; }
 .rec-cnt:empty { display: none; }
+
+/* ---------- Lecteur d'analyse ---------- */
+.pl-stage { background: #000; border-radius: var(--radius); overflow: hidden; }
+.pl-stage video { width: 100%; max-height: 56vh; display: block; }
+.pl-stage:fullscreen video { max-height: 100vh; height: 100%; object-fit: contain; }
+.pl-time { display: flex; justify-content: space-between; margin: 10px 2px 0; font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 650; }
+.pl-track { position: relative; height: 44px; display: grid; align-items: center; }
+.pl-seg { position: absolute; top: 50%; height: 10px; transform: translateY(-50%); background: var(--accent); opacity: .55; border-radius: 5px; pointer-events: none; }
+.pl-track input[type=range] { width: 100%; margin: 0; height: 44px; background: transparent; accent-color: var(--accent); }
+.pl-ctrl { display: grid; grid-template-columns: 1fr 1.6fr 1fr 1fr; gap: 8px; }
+.pl-ctrl .btn { padding: 0; font-size: 20px; touch-action: manipulation; user-select: none; }
+.pl-speed { padding: 10px 0 4px; flex-wrap: wrap; overflow: visible; }
+.pl-ab { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr 1fr; gap: 8px; margin: 8px 0 12px; }
+.pl-ab .btn { padding: 0 4px; font-size: 14px; min-height: 48px; }
+.pl-ab .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.ex-row { padding: 8px 8px 8px 6px; gap: 6px; }

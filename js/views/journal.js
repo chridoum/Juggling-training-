@@ -4,6 +4,7 @@ import * as media from '../media.js';
 import { allClips, clipsOfFigure, setClipFigure, deleteClip } from '../data.js';
 import { setView, onLeave, esc, ICON, toast, confirmBox, fmtBytes, byName } from '../ui.js';
 import { notFound } from './agres.js';
+import { mountPlayer } from '../player.js';
 
 const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const MARKS = { ok: '👍 Propre', revoir: '🔁 À revoir' };
@@ -190,7 +191,7 @@ export async function clipView(id) {
   const d = new Date(c.createdAt);
   const ext = (c.mime || '').includes('mp4') ? 'mp4' : 'webm';
   const body = `
-    ${url ? `<video id="vid" class="clip-video" src="${url}" controls playsinline preload="metadata"></video>`
+    ${url ? '<div id="player"></div>'
           : '<div class="empty"><strong>Vidéo introuvable</strong>Le fichier n\'est plus sur ce téléphone.</div>'}
 
     <div class="meta" style="margin:12px 0">
@@ -219,16 +220,13 @@ export async function clipView(id) {
   const v = setView({
     title: fig ? fig.name : 'Clip', back: fig ? `#/journal/f/${fig.id}` : (c.agresId ? `#/journal?tri=${c.agresId}` : '#/journal?tri'), tab: 'journal', body,
   });
-  onLeave(() => { if (url) URL.revokeObjectURL(url); });
-
-  // Les vidéos sans durée enregistrée (WebM) : on force le calcul pour que la barre de lecture fonctionne.
-  const vid = v.querySelector('#vid');
-  if (vid) vid.addEventListener('loadedmetadata', () => {
-    if (vid.duration === Infinity) {
-      vid.currentTime = 1e101;
-      vid.addEventListener('timeupdate', function fix() { vid.removeEventListener('timeupdate', fix); vid.currentTime = 0; });
-    }
-  });
+  if (url) {
+    const player = mountPlayer(v.querySelector('#player'), {
+      url, duration: c.duration, extraits: c.extraits || [],
+      onChange: async list => { c.extraits = list; await db.put('clips', c); },
+    });
+    onLeave(() => { player.destroy(); URL.revokeObjectURL(url); });
+  }
 
   v.querySelectorAll('#marks .chip').forEach(b => {
     b.onclick = async () => {

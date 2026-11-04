@@ -8,7 +8,7 @@ Tout reste sur le téléphone : aucune donnée n'est envoyée sur internet.
 
 - [x] Étape 1 : agrès (traditionnels et perso), figures, fiches, stockage local, sauvegarde des fiches
 - [x] Étape 2 : enregistrement par clips d'une minute, minuteur, métronome
-- [ ] Étape 3 : lecteur d'analyse, extraits, boîte « À trier »
+- [x] Étape 3 : lecteur d'analyse, extraits, boîte « À trier »
 - [ ] Étape 4 : analyse du rythme par le son, détection des chutes
 - [ ] Étape 5 : animations siteswap, journal des sessions, sauvegarde complète
 
