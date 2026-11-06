@@ -13,6 +13,8 @@ export const ICON = {
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   ext: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v6H4V6h6"/></svg>',
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
+  cam: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>',
   trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
 };
 
@@ -53,12 +55,42 @@ export function setView({ title, back = null, actions = [], body = '', fab = nul
 }
 
 let toastTimer = null;
-export function toast(msg) {
+// Message bref ; avec { action, onAction } un bouton (ex. « Annuler ») reste utilisable pendant { ms }.
+export function toast(msg, { action = null, onAction = null, ms = 2200 } = {}) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button type="button">${esc(action)}</button>` : ''}`;
   t.classList.add('show');
+  if (action) t.querySelector('button').onclick = () => { clearTimeout(toastTimer); t.classList.remove('show'); if (onAction) onAction(); };
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// Demande un texte court (nom). Renvoie le texte, ou null si on annule.
+export function askText({ title, value = '', placeholder = '', ok = 'Enregistrer' }) {
+  const d = document.getElementById('modal');
+  d.innerHTML = `<h3>${esc(title)}</h3>
+    <input id="askIn" class="input" maxlength="60" value="${esc(value)}" placeholder="${esc(placeholder)}" autocomplete="off">
+    <div class="btn-row"><button class="btn" value="cancel">Annuler</button><button class="btn primary" value="ok">${esc(ok)}</button></div>`;
+  return new Promise(resolve => {
+    const input = d.querySelector('#askIn');
+    const done = v => { d.close(); resolve(v); };
+    d.querySelector('[value=cancel]').onclick = () => done(null);
+    d.querySelector('[value=ok]').onclick = () => done(input.value.trim() || null);
+    input.onkeydown = e => { if (e.key === 'Enter') done(input.value.trim() || null); };
+    d.oncancel = () => resolve(null);
+    d.showModal(); input.select();
+  });
+}
+
+// Feuille d'actions : items = [{ label, danger, onClick }]
+export function actionSheet(title, items) {
+  const d = document.getElementById('modal');
+  d.innerHTML = `<h3>${esc(title)}</h3><div class="sheet-list">${items.map((it, i) =>
+    `<button class="btn quiet ${it.danger ? 'danger' : ''}" data-i="${i}">${esc(it.label)}</button>`).join('')}</div>
+    <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Fermer</button></div>`;
+  d.querySelector('[value=cancel]').onclick = () => d.close();
+  d.querySelectorAll('[data-i]').forEach(b => { b.onclick = () => { d.close(); items[+b.dataset.i].onClick(); }; });
+  d.showModal();
 }
 
 // Boîte de confirmation : renvoie true si l'utilisateur confirme.
@@ -101,4 +133,16 @@ export function fmtBytes(b) {
 
 export function byName(a, b) {
   return a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' });
+}
+
+export function notFound() {
+  setView({ title: 'Introuvable', back: '#/journal', tab: 'journal',
+    body: '<div class="empty"><strong>Introuvable</strong>Cet élément n\'existe plus.</div>' });
+}
+
+// Nom d'un clip : celui que l'utilisateur a choisi, sinon sa date.
+export function clipLabel(c) {
+  if (c.name) return c.name;
+  const d = new Date(c.createdAt);
+  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
 }

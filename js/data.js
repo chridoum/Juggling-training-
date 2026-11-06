@@ -1,176 +1,94 @@
-// Opérations sur les agrès et les figures, au-dessus du stockage brut.
+// Données : agrès → dossiers (arborescence) → clips.
+// Un agrès garde ses dossiers dans `categories` : [{ id, name, parentId }] (parentId null = à la racine).
+// Un clip est « à trier » tant que `sorted` est faux ; sinon il est rangé dans (agresId, folderId).
 import * as db from './db.js';
-import { CATALOG, CATALOG_VERSION, CATEGORIES, defaultCategory } from './catalog.js';
+import { CATALOG, CATEGORIES } from './catalog.js';
 import * as media from './media.js';
 import { buildZip, readZip } from './zip.js';
 
+const cmp = (a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base', numeric: true });
+
+// ---------- Agrès ----------
 export async function listAgres() {
-  const list = await db.all('agres');
-  return list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name, 'fr'));
+  return (await db.all('agres')).sort((a, b) => cmp(a.name, b.name));
 }
 
-export async function figuresOf(agresId) {
-  return db.byIndex('figures', 'agresId', agresId);
-}
-
-export async function countFigures() {
-  const figs = await db.all('figures');
-  const map = {};
-  for (const f of figs) map[f.agresId] = (map[f.agresId] || 0) + 1;
-  return map;
-}
-
-// Ajoute un agrès traditionnel depuis le catalogue, avec ses figures de base.
-export async function addFromCatalog(key) {
-  const def = CATALOG.find(c => c.key === key);
-  if (!def) throw new Error(`Agrès inconnu : ${key}`);
-  const existing = (await db.all('agres')).find(a => a.catalogKey === key);
-  if (existing) return existing;
-
-  const count = (await db.all('agres')).length;
-  const agres = await db.put('agres', {
-    id: db.uid(),
-    name: def.name,
-    icon: def.icon,
-    family: def.family,
-    type: 'traditionnel',
-    catalogKey: def.key,
-    description: '',
-    tags: [...def.tags],
-    sources: def.sources.map(s => ({ ...s })),
-    categories: (CATEGORIES[def.key] || []).map(name => ({ id: db.uid(), name })),
-    order: count,
-  });
-  const catId = n => (agres.categories.find(c => c.name === n) || {}).id || null;
-
-  const idByName = {};
-  const figs = def.figures.map(f => {
-    const fig = {
-      id: db.uid(),
-      agresId: agres.id,
-      name: f.name,
-      aliases: f.aliases || [],
-      siteswap: f.siteswap || '',
-      level: f.level || 1,
-      tags: f.tags || [],
-      prereqNames: f.prereq || [],
-      links: f.link ? [{ ...f.link }] : [],
-      notes: '',
-      status: 'decouvrir',
-      fromCatalog: true,
-      categoryId: catId(defaultCategory(def.key, f.name)),
-    };
-    idByName[f.name] = fig.id;
-    return fig;
-  });
-  for (const fig of figs) {
-    fig.prereq = fig.prereqNames.map(n => idByName[n]).filter(Boolean);
-    delete fig.prereqNames;
+// Crée un agrès : depuis le catalogue (avec ses dossiers usuels, ex. « 3 balles ») ou sur mesure.
+export async function createAgres({ name, catalogKey = null }) {
+  const def = catalogKey ? CATALOG.find(c => c.key === catalogKey) : null;
+  if (def) {
+    const existing = (await db.all('agres')).find(a => a.catalogKey === def.key);
+    if (existing) return existing;
   }
-  await db.putMany('figures', figs);
-  return agres;
+  return db.put('agres', {
+    id: db.uid(), name: def ? def.name : name.trim(), catalogKey: def ? def.key : null,
+    categories: def ? (CATEGORIES[def.key] || []).map(n => ({ id: db.uid(), name: n, parentId: null })) : [],
+  });
 }
 
-// Met à jour les figures déjà installées quand le catalogue est corrigé :
-// ajoute les liens tutoriels manquants et corrige les siteswaps erronés,
-// sans toucher à ce que l'utilisateur a modifié lui-même.
-const SITESWAP_FIXES = {
-  "Burke's Barrage": { from: '3', to: '423' },
-  "Rubenstein's Revenge": { from: '3', to: '52233' },
-};
+export async function renameAgres(agres, name) { agres.name = name.trim() || agres.name; return db.put('agres', agres); }
 
-export async function syncCatalog() {
-  const done = await db.getMeta('catalogVersion', 1);
-  if (done >= CATALOG_VERSION) return;
-  const agresList = (await db.all('agres')).filter(a => a.catalogKey);
-  for (const a of agresList) {
-    const def = CATALOG.find(c => c.key === a.catalogKey);
-    if (!def) continue;
-    if (!a.categories) {
-      a.categories = (CATEGORIES[a.catalogKey] || []).map(name => ({ id: db.uid(), name }));
-      await db.put('agres', a);
-    }
-    const catId = n => (a.categories.find(c => c.name === n) || {}).id || null;
-    const figs = await figuresOf(a.id);
-    for (const fig of figs) {
-      if (fig.categoryId === undefined) {
-        fig.categoryId = catId(defaultCategory(a.catalogKey, fig.name));
-        await db.put('figures', fig);
-      }
-      const ref = def.figures.find(f => f.name === fig.name);
-      if (!ref) continue;
-      let changed = false;
-      if (ref.link && !(fig.links || []).some(l => l.url === ref.link.url)) {
-        fig.links = [{ ...ref.link }, ...(fig.links || [])];
-        changed = true;
-      }
-      const fix = SITESWAP_FIXES[fig.name];
-      if (fix && fig.siteswap === fix.from) { fig.siteswap = fix.to; changed = true; }
-      if (changed) await db.put('figures', fig);
-    }
-  }
-  await db.setMeta('catalogVersion', CATALOG_VERSION);
-}
-
+// Les clips d'un agrès supprimé retournent « à trier ».
 export async function deleteAgres(id) {
-  const figs = await figuresOf(id);
-  for (const f of figs) await db.del('figures', f.id);
+  for (const c of await db.all('clips')) if (c.agresId === id) await unplaceClip(c);
   await db.del('agres', id);
 }
 
-export async function deleteFigure(id) {
-  // Retire aussi la figure des prérequis des autres figures
-  const fig = await db.get('figures', id);
-  if (fig) {
-    const siblings = await figuresOf(fig.agresId);
-    for (const s of siblings) {
-      if ((s.prereq || []).includes(id)) {
-        s.prereq = s.prereq.filter(p => p !== id);
-        await db.put('figures', s);
-      }
-    }
+// ---------- Dossiers ----------
+export const foldersOf = agres => agres.categories || [];
+export const children = (agres, parentId) => foldersOf(agres).filter(f => (f.parentId || null) === (parentId || null)).sort((a, b) => cmp(a.name, b.name));
+
+// Chemin racine → dossier (liste de dossiers)
+export function pathOf(agres, folderId) {
+  const out = [];
+  let cur = foldersOf(agres).find(f => f.id === folderId);
+  while (cur) { out.unshift(cur); cur = foldersOf(agres).find(f => f.id === cur.parentId); }
+  return out;
+}
+
+// Le dossier et tous ses sous-dossiers
+export function subtree(agres, folderId) {
+  const ids = new Set([folderId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of foldersOf(agres)) if (!ids.has(f.id) && ids.has(f.parentId)) { ids.add(f.id); grew = true; }
   }
-  for (const c of await db.byIndex('clips', 'figureId', id)) await setClipFigure(c, null);
-  await db.del('figures', id);
+  return ids;
 }
 
-// Sauvegarde des fiches (sans vidéos) au format JSON
-export async function exportData() {
-  return {
-    app: 'carnet-de-jongle',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    agres: await db.all('agres'),
-    figures: await db.all('figures'),
-    sessions: await db.all('sessions'),
-    clips: await db.all('clips'),
-  };
+export async function addFolder(agres, parentId, name) {
+  const f = { id: db.uid(), name: name.trim(), parentId: parentId || null };
+  agres.categories = [...foldersOf(agres), f];
+  await db.put('agres', agres);
+  return f;
 }
 
-export async function importData(data) {
-  if (!data || data.app !== 'carnet-de-jongle') throw new Error("Ce fichier n'est pas une sauvegarde de Juglog.");
-  await db.putMany('agres', data.agres || []);
-  await db.putMany('figures', data.figures || []);
-  await db.putMany('sessions', data.sessions || []);
-  await db.putMany('clips', data.clips || []);
-  return { agres: (data.agres || []).length, figures: (data.figures || []).length };
+export async function renameFolder(agres, folderId, name) {
+  const f = foldersOf(agres).find(x => x.id === folderId);
+  if (f && name.trim()) { f.name = name.trim(); await db.put('agres', agres); }
 }
 
-// ---------- Clips et sessions ----------
-export async function startSession(figureId) {
-  return db.put('sessions', { id: db.uid(), figureId: figureId || null, startedAt: Date.now() });
+// Supprimer un dossier : son contenu (sous-dossiers et clips) remonte d'un niveau.
+export async function deleteFolder(agres, folderId) {
+  const f = foldersOf(agres).find(x => x.id === folderId);
+  if (!f) return;
+  const parent = f.parentId || null;
+  for (const x of foldersOf(agres)) if (x.parentId === folderId) x.parentId = parent;
+  agres.categories = foldersOf(agres).filter(x => x.id !== folderId);
+  await db.put('agres', agres);
+  for (const c of await db.all('clips')) if (c.agresId === agres.id && c.folderId === folderId) { c.folderId = parent; await db.put('clips', c); }
 }
 
-// Enregistre le clip (fiche + vidéo). figureId null = « À trier ».
-export async function addClip({ blob, figureId, agresId: forcedAgres, sessionId, duration, bpm, metro, thumb, mime }) {
+// ---------- Clips ----------
+// Un nouveau clip arrive toujours « à trier », sans nom.
+export async function addClip({ blob, duration, bpm, metro, thumb, mime }) {
   const id = db.uid();
   await media.saveVideo(id, blob);
-  let agresId = forcedAgres || null;
-  if (figureId) { const f = await db.get('figures', figureId); agresId = f ? f.agresId : null; }
   return db.put('clips', {
-    id, figureId: figureId || null, agresId, sessionId: sessionId || null,
+    id, name: '', sorted: false, agresId: null, folderId: null,
     duration, bpm: bpm || null, metro: metro || null, thumb: thumb || null,
-    mime: mime || blob.type, size: blob.size, mark: null, note: '',
+    mime: mime || blob.type, size: blob.size,
   });
 }
 
@@ -178,20 +96,76 @@ export async function allClips() {
   return (await db.all('clips')).sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function clipsOfFigure(figureId) {
-  return (await db.byIndex('clips', 'figureId', figureId)).sort((a, b) => b.createdAt - a.createdAt);
+export async function unsortedClips() {
+  return (await allClips()).filter(c => !c.sorted);
 }
 
-export async function setClipFigure(clip, figureId) {
-  clip.figureId = figureId || null;
-  // Sans figure, le clip garde son agrès : il reste « à trier » dans cet agrès.
-  if (figureId) { const f = await db.get('figures', figureId); clip.agresId = f ? f.agresId : clip.agresId; }
+// Clips posés directement à ce niveau (agresId + folderId, null = racine de l'agrès)
+export function clipsAt(clips, agresId, folderId) {
+  return clips.filter(c => c.sorted && c.agresId === agresId && (c.folderId || null) === (folderId || null));
+}
+
+export async function placeClip(clip, agresId, folderId) {
+  clip.sorted = true; clip.agresId = agresId; clip.folderId = folderId || null;
+  return db.put('clips', clip);
+}
+
+export async function unplaceClip(clip) {
+  clip.sorted = false; clip.agresId = null; clip.folderId = null;
+  return db.put('clips', clip);
+}
+
+export async function renameClip(clip, name) {
+  clip.name = name.trim();
   return db.put('clips', clip);
 }
 
 export async function deleteClip(id) {
   await media.deleteVideo(id);
   await db.del('clips', id);
+}
+
+// Ancien modèle (clips rattachés à des figures) → nouveau : chaque figure qui avait des clips
+// devient un dossier de son agrès (sous sa catégorie), les autres clips restent « à trier ».
+export async function migrate() {
+  const clips = (await db.all('clips')).filter(c => c.sorted === undefined);
+  if (!clips.length) return;
+  const agresById = Object.fromEntries((await db.all('agres')).map(a => [a.id, a]));
+  const figs = Object.fromEntries((await db.all('figures')).map(f => [f.id, f]));
+  const touched = new Set();
+  for (const c of clips) {
+    const f = c.figureId ? figs[c.figureId] : null;
+    const a = f ? agresById[f.agresId] : null;
+    c.name = c.name || '';
+    if (f && a) {
+      a.categories = (a.categories || []).map(x => ({ ...x, parentId: x.parentId ?? null }));
+      if (!a.categories.some(x => x.id === f.id)) {
+        const parent = a.categories.some(x => x.id === f.categoryId) ? f.categoryId : null;
+        a.categories.push({ id: f.id, name: f.name, parentId: parent });
+      }
+      touched.add(a.id);
+      c.sorted = true; c.agresId = a.id; c.folderId = f.id;
+    } else { c.sorted = false; c.agresId = null; c.folderId = null; }
+    await db.put('clips', c);
+  }
+  for (const id of touched) await db.put('agres', agresById[id]);
+}
+
+// ---------- Sauvegarde (classement, sans vidéos) ----------
+export async function exportData() {
+  return {
+    app: 'carnet-de-jongle', version: 2, exportedAt: new Date().toISOString(),
+    agres: await db.all('agres'), figures: await db.all('figures'), clips: await db.all('clips'),
+  };
+}
+
+export async function importData(data) {
+  if (!data || data.app !== 'carnet-de-jongle') throw new Error("Ce fichier n'est pas une sauvegarde de Juglog.");
+  await db.putMany('agres', data.agres || []);
+  await db.putMany('figures', data.figures || []);
+  await db.putMany('clips', data.clips || []);
+  await migrate();
+  return { agres: (data.agres || []).length, clips: (data.clips || []).length };
 }
 
 // ---------- Sauvegarde des vidéos (archives .zip d'environ 250 Mo) ----------

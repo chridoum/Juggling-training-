@@ -3,28 +3,20 @@
 import * as db from '../db.js';
 import * as media from '../media.js';
 import { allClips } from '../data.js';
-import { setView, onLeave, esc, toast } from '../ui.js';
-import { notFound } from './agres.js';
+import { setView, onLeave, esc, toast, notFound, clipLabel } from '../ui.js';
 
 const fmt = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(2).padStart(5, '0')}`; };
 const SPEEDS = [0.1, 0.25, 0.5, 1];
 
-// Choix d'un clip (boîte de dialogue) : ceux de la même figure d'abord.
-export async function pickClip(excludeId, figureId) {
-  const [clips, figures] = await Promise.all([allClips(), db.all('figures')]);
-  const fById = Object.fromEntries(figures.map(f => [f.id, f]));
-  const list = clips.filter(c => c.id !== excludeId)
-    .sort((a, b) => ((b.figureId === figureId && !!figureId) - (a.figureId === figureId && !!figureId)) || b.createdAt - a.createdAt)
-    .slice(0, 60);
+// Choix d'un clip (boîte de dialogue), les plus récents d'abord.
+export async function pickClip(excludeId) {
+  const list = (await allClips()).filter(c => c.id !== excludeId).slice(0, 60);
   const d = document.getElementById('modal');
   d.innerHTML = `<h3>Comparer avec…</h3>
-    <div class="pick-list">${list.length ? list.map(c => {
-      const f = fById[c.figureId];
-      const dt = new Date(c.createdAt);
-      return `<button class="pick clip-pick" data-id="${c.id}">
-        ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="" style="width:64px;height:40px">` : '🎞️'}
-        <span>${esc(f ? f.name : 'À trier')}<small>${esc(dt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))} ${esc(dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))}${c.bpm ? ` · ${c.bpm} BPM` : ''}</small></span></button>`;
-    }).join('') : '<small class="muted">Pas d\'autre clip à comparer pour l\'instant.</small>'}</div>
+    <div class="pick-list">${list.length ? list.map(c => `<button class="pick clip-pick" data-id="${c.id}">
+        ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="" style="width:64px;height:40px">` : ''}
+        <span>${esc(clipLabel(c))}<small>${c.bpm ? `${c.bpm} BPM` : ''}</small></span></button>`).join('')
+      : '<small class="muted">Pas d\'autre clip à comparer pour l\'instant.</small>'}</div>
     <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Annuler</button></div>`;
   return new Promise(resolve => {
     d.querySelectorAll('.clip-pick').forEach(b => { b.onclick = () => { d.close(); resolve(b.dataset.id); }; });
@@ -37,18 +29,13 @@ export async function pickClip(excludeId, figureId) {
 export async function compare(idA, idB) {
   const [ca, cb] = await Promise.all([db.get('clips', idA), db.get('clips', idB)]);
   if (!ca || !cb) return notFound();
-  const [fa, fb] = await Promise.all([ca.figureId ? db.get('figures', ca.figureId) : null, cb.figureId ? db.get('figures', cb.figureId) : null]);
   const [fileA, fileB] = await Promise.all([media.loadVideo(idA, ca.mime), media.loadVideo(idB, cb.mime)]);
   if (!fileA || !fileB) return notFound();
   const urls = [URL.createObjectURL(fileA), URL.createObjectURL(fileB)];
 
-  const label = (c, f) => {
-    const d = new Date(c.createdAt);
-    return `${f ? f.name : 'À trier'} · ${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
-  };
-  const pane = (i, c, f) => `
+  const pane = (i, c) => `
     <div class="cmp-pane" data-i="${i}">
-      <div class="cmp-head"><span class="cmp-name">${esc(label(c, f))}</span><button class="btn cmp-change" data-i="${i}">Changer</button></div>
+      <div class="cmp-head"><span class="cmp-name">${esc(clipLabel(c))}</span><button class="btn cmp-change" data-i="${i}">Changer</button></div>
       <div class="pl-stage"><video src="${urls[i]}" playsinline preload="auto" muted></video></div>
       <div class="cmp-row">
         <span class="cmp-time">0:00.00</span>
@@ -59,7 +46,7 @@ export async function compare(idA, idB) {
 
   const body = `
     <div class="cmp">
-      ${pane(0, ca, fa)}${pane(1, cb, fb)}
+      ${pane(0, ca)}${pane(1, cb)}
       <div class="pl-ctrl">
         <button class="btn" id="back" aria-label="Image précédente">◀︎|</button>
         <button class="btn primary" id="play" aria-label="Lecture">▶</button>
@@ -125,7 +112,7 @@ export async function compare(idA, idB) {
     b.onclick = async () => {
       const i = +b.dataset.i;
       const other = i === 0 ? idB : idA;
-      const chosen = await pickClip(other, (i === 0 ? cb : ca).figureId);
+      const chosen = await pickClip(other);
       if (chosen) location.hash = i === 0 ? `#/comparer/${chosen}/${idB}` : `#/comparer/${idA}/${chosen}`;
     };
   });

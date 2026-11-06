@@ -1,16 +1,12 @@
 # Juglog
 
-Application web installable (PWA) pour s'entraîner à la jonglerie et aux flow arts avec la vidéo : clips courts rangés par agrès et par figure, métronome, bibliothèques de figures.
+Application web installable (PWA) pour s'entraîner à la jonglerie et aux flow arts avec la vidéo. Trois menus :
+
+- **Entraînement** : ouvre directement l'enregistreur (clips enchaînés, métronome intégré à la vidéo). À l'arrêt, la liste des clips à trier s'affiche.
+- **Journal** : les agrès et leurs dossiers (arborescence libre). On analyse un clip (ralenti, image par image, boucle A-B, extraits, comparaison) puis on le range ; plusieurs clips peuvent aller dans le même dossier.
+- **Ressources** : des liens pour apprendre, agrès par agrès.
 
 Tout reste sur le téléphone : aucune donnée n'est envoyée sur internet.
-
-## Avancement
-
-- [x] Étape 1 : agrès (traditionnels et perso), figures, fiches, stockage local, sauvegarde des fiches
-- [x] Étape 2 : enregistrement par clips d'une minute, minuteur, métronome
-- [x] Étape 3 : lecteur d'analyse, extraits, boîte « À trier »
-- [ ] Étape 4 : analyse du rythme par le son, détection des chutes
-- [x] Étape 5 : animations siteswap, journal des sessions, sauvegarde complète
 
 ## Installation sur Android
 
