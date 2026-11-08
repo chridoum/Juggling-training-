@@ -3,12 +3,14 @@ import * as db from '../db.js';
 import * as media from '../media.js';
 import { CATALOG } from '../catalog.js';
 import {
-  listAgres, createAgres, renameAgres, deleteAgres, children, pathOf, subtree, addFolder, renameFolder, deleteFolder,
-  allClips, unsortedClips, clipsAt, placeClip, unplaceClip, renameClip, deleteClip,
+  listAgres, reorderAgres, moveFolder, createAgres, renameAgres, deleteAgres, children, pathOf, subtree, addFolder, renameFolder, deleteFolder,
+  allClips, unsortedClips, addClip, clipsAt, placeClip, unplaceClip, renameClip, deleteClip,
 } from '../data.js';
 import { setView, onLeave, esc, ICON, toast, confirmBox, askText, actionSheet, fmtBytes, notFound, clipLabel } from '../ui.js';
 import { mountPlayer } from '../player.js';
+import { cutClip } from '../clipcut.js';
 import { pickClip } from './compare.js';
+import { enableDrag } from '../drag.js';
 
 const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
@@ -83,7 +85,8 @@ export async function journalHome() {
   const body = `
     ${inbox ? `<div class="list"><a class="row inbox-row" href="#/trier"><span class="row-main"><span class="row-title">À trier</span><span class="row-sub">${plural(inbox, 'clip')}</span></span>${ICON.chev}</a></div>` : ''}
     ${agres.length ? `<h3 class="section-title">Agrès</h3>
-      <div class="list">${agres.map(a => `<a class="row" href="#/journal/a/${a.id}">
+      ${agres.length > 1 ? '<p class="muted small hint">Appui long sur un agrès pour changer l\'ordre.</p>' : ''}
+      <div class="list" id="agList">${agres.map(a => `<a class="row drag-row" draggable="false" data-id="${a.id}" href="#/journal/a/${a.id}">
         <span class="row-main"><span class="row-title">${esc(a.name)}</span></span>
         <span class="row-count">${count(a)}</span>${ICON.chev}</a>`).join('')}</div>`
       : `<div class="empty"><strong>Aucun agrès</strong>Crée un agrès pour ranger tes clips.</div>`}`;
@@ -92,6 +95,17 @@ export async function journalHome() {
     const a = await newAgresDialog();
     if (a) location.hash = `#/journal/a/${a.id}`;
   } } });
+  const list = v.querySelector('#agList');
+  if (list) enableDrag(list, {
+    rowSelector: '.drag-row', mode: 'sort',
+    onDrop: async ({ id, targetId, where }) => {
+      const ids = agres.map(a => a.id).filter(x => x !== id);
+      const i = ids.indexOf(targetId) + (where === 'after' ? 1 : 0);
+      ids.splice(i, 0, id);
+      await reorderAgres(ids);
+      journalHome();
+    },
+  });
   return v;
 }
 
@@ -107,7 +121,8 @@ export async function journalFolder(agresId, folderId = null) {
   const countIn = f => { const ids = subtree(a, f.id); return clips.filter(c => c.sorted && c.agresId === agresId && ids.has(c.folderId)).length; };
 
   const body = `
-    ${subs.length ? `<div class="list">${subs.map(f => `<a class="row" href="#/journal/a/${agresId}/${f.id}">
+    ${here ? '<div class="drop-up" id="dropUp">Déposer ici pour sortir du dossier</div>' : ''}
+    ${subs.length ? `${subs.length + (here ? 1 : 0) > 1 || mine.length ? '<p class="muted small hint">Appui long sur un dossier pour le glisser dans un autre.</p>' : ''}<div class="list" id="fList">${subs.map(f => `<a class="row drag-row" draggable="false" data-id="${f.id}" href="#/journal/a/${agresId}/${f.id}">
       <span class="row-main"><span class="row-title">${esc(f.name)}</span></span><span class="row-count">${countIn(f)}</span>${ICON.chev}</a>`).join('')}</div>` : ''}
     ${mine.length ? `<h3 class="section-title">${plural(mine.length, 'clip')}</h3>
       <div class="list">${mine.map(c => `<a class="row" href="#/clip/${c.id}">${thumb(c)}
@@ -136,12 +151,24 @@ export async function journalFolder(agresId, folderId = null) {
       if (n) { await addFolder(a, folderId, n); reload(); }
     } },
   });
+  const fl = v.querySelector('#fList');
+  if (fl) enableDrag(fl, {
+    rowSelector: '.drag-row', mode: 'nest', upSelector: here ? '#dropUp' : null,
+    onDrop: async ({ id, targetId, where }) => {
+      const dest = where === 'up' ? (here.parentId || null) : targetId;
+      const ok = await moveFolder(a, id, dest);
+      const name = (a.categories || []).find(f => f.id === id).name;
+      if (ok) toast(where === 'up' ? `« ${name} » est remonté d'un niveau` : `« ${name} » déplacé dans « ${(a.categories || []).find(f => f.id === targetId).name} »`);
+      else toast('Déplacement impossible');
+      reload();
+    },
+  });
   return v;
 }
 
 // ---------- Choisir où ranger un clip ----------
 // Navigue dans l'arbre : agrès → dossiers. « Ranger ici » valide l'endroit où l'on se trouve.
-async function pickPlace(clip) {
+async function pickPlace(clip, title = 'Ranger dans…') {
   let agresId = clip.sorted ? clip.agresId : null;
   let folderId = clip.sorted ? clip.folderId : null;
   const d = document.getElementById('modal');
@@ -151,7 +178,7 @@ async function pickPlace(clip) {
     const render = async () => {
       if (!agresId) {
         const agres = await listAgres();
-        d.innerHTML = `<h3>Ranger dans…</h3>
+        d.innerHTML = `<h3>${esc(title)}</h3>
           <div class="pick-list">${agres.map(a => `<button class="pick" data-a="${a.id}">${esc(a.name)}${ICON.chev}</button>`).join('')}
             <button class="pick add" id="newA">+ Nouvel agrès</button></div>
           <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Annuler</button></div>`;
@@ -227,6 +254,15 @@ export async function clipView(id) {
     const player = mountPlayer(v.querySelector('#player'), {
       url, duration: c.duration, extraits: c.extraits || [],
       onChange: async list => { c.extraits = list; await db.put('clips', c); },
+      // Un passage devient un vrai clip, qu'on peut ranger tout de suite.
+      onCut: async ({ start, end, onProgress }) => {
+        const r = await cutClip(url, start, end, onProgress);
+        const nc = await addClip({ blob: r.blob, duration: r.duration, bpm: c.bpm, thumb: r.thumb, mime: r.mime });
+        nc.name = `${c.name || clipLabel(c)} · extrait`; await db.put('clips', nc);
+        const chosen = await pickPlace(nc, 'Clip créé. Où le ranger ?');
+        if (chosen) { await placeClip(nc, chosen.agresId, chosen.folderId); toast(`Clip rangé dans ${await placeLabel(nc)}`, { ms: 3000 }); }
+        else toast('Clip créé, il t\'attend dans « À trier »', { ms: 3000 });
+      },
     });
     onLeave(() => { player.destroy(); URL.revokeObjectURL(url); });
   }

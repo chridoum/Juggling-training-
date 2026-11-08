@@ -46,7 +46,7 @@ export async function recorder() {
         <button class="btn" id="metroOn" aria-pressed="${P.metroOn}">Clic : ${P.metroOn ? 'oui' : 'non'}</button>
       </div>
       <div class="opt"><span>Temps par mesure</span><div class="chips">${chips('beats', [1, 2, 3, 4, 6, 8], P.beats)}</div></div>
-      <div class="opt"><span>Durée d'un clip</span><div class="chips">${chips('dur', [30, 60, 120], P.dur, v => v < 60 ? v + ' s' : v / 60 + ' min')}</div></div>
+      <div class="opt"><span>Durée d'un clip</span><div class="chips">${chips('dur', [10, 30, 60, 120], P.dur, v => v < 60 ? v + ' s' : v / 60 + ' min')}</div></div>
       <div class="opt"><span>Enchaînement</span><div class="seg">
         <button data-chain="1" aria-pressed="${P.chain}">Jusqu'à l'arrêt</button>
         <button data-chain="0" aria-pressed="${!P.chain}">Un seul clip</button></div></div>
@@ -177,6 +177,12 @@ export async function recorder() {
     o.start(when); o.stop(when + len);
   }
 
+  // Marqueur sonore de fin de clip : deux notes descendantes, jouées sur le haut-parleur.
+  function endBeep() {
+    const t = ctx.currentTime + 0.02;
+    beep(988, t, 0.14); beep(659, t + 0.17, 0.22);
+  }
+
   async function startCountdown() {
     if (counting || recording) return;
     if (testing) { testing = false; metro.stop(); $('#test').textContent = 'Tester'; }
@@ -238,6 +244,7 @@ export async function recorder() {
     $('#timer').textContent = seq > 1 ? `${fmt(s)} · clip ${seq}` : fmt(s);
     if (!cur.thumb && s >= 1.2) cur.thumb = grabThumb();
     if (s >= P.dur) {
+      endBeep();
       if (P.chain) { const old = cur; nextTempo(); startClip(); endClip(old); }
       else stopRecording();
     }
@@ -257,6 +264,7 @@ export async function recorder() {
     if (!recording) return;
     recording = false; clearInterval(timerId);
     metro.stop();
+    if (performance.now() - cur.startMs < P.dur * 1000 - 150) endBeep(); // arrêt à la main
     endClip(cur);
     nextTempo();
     setRecUi(false);

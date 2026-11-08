@@ -10,7 +10,14 @@ const cmp = (a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base', numeric: t
 
 // ---------- Agrès ----------
 export async function listAgres() {
-  return (await db.all('agres')).sort((a, b) => cmp(a.name, b.name));
+  // Ordre choisi par l'utilisateur (glisser-déposer), puis alphabétique pour les nouveaux.
+  return (await db.all('agres')).sort((a, b) => ((a.order ?? 1e9) - (b.order ?? 1e9)) || cmp(a.name, b.name));
+}
+
+// Enregistre un nouvel ordre : ids = identifiants des agrès, dans l'ordre voulu.
+export async function reorderAgres(ids) {
+  const all = Object.fromEntries((await db.all('agres')).map(a => [a.id, a]));
+  for (const [i, id] of ids.entries()) if (all[id]) { all[id].order = i; await db.put('agres', all[id]); }
 }
 
 // Crée un agrès : depuis le catalogue (avec ses dossiers usuels, ex. « 3 balles ») ou sur mesure.
@@ -67,6 +74,17 @@ export async function addFolder(agres, parentId, name) {
 export async function renameFolder(agres, folderId, name) {
   const f = foldersOf(agres).find(x => x.id === folderId);
   if (f && name.trim()) { f.name = name.trim(); await db.put('agres', agres); }
+}
+
+// Déplace un dossier (avec tout son contenu) dans un autre dossier, ou à la racine (newParentId = null).
+// Refuse de le mettre dans lui-même ou dans l'un de ses sous-dossiers. Renvoie true si déplacé.
+export async function moveFolder(agres, folderId, newParentId) {
+  const f = foldersOf(agres).find(x => x.id === folderId);
+  if (!f || (f.parentId || null) === (newParentId || null)) return false;
+  if (newParentId && subtree(agres, folderId).has(newParentId)) return false;
+  f.parentId = newParentId || null;
+  await db.put('agres', agres);
+  return true;
 }
 
 // Supprimer un dossier : son contenu (sous-dossiers et clips) remonte d'un niveau.
