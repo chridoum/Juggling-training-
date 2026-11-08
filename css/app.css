@@ -194,3 +194,5 @@ dialog .input { background: var(--bg); }
 .drop-up { display: none; place-items: center; min-height: 52px; margin-bottom: 8px; border: 1.5px dashed var(--line); border-radius: 12px; color: var(--text-2); font-size: 15px; }
 body.dragging .drop-up { display: grid; }
 .hint { margin: 2px 2px 6px; }
+
+.icon-btn:disabled { opacity: .25; }

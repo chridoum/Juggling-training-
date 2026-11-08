@@ -1,7 +1,7 @@
 // Point d'entrée : routeur par ancre (#/...) et démarrage.
 import * as db from './db.js';
 import { applyTheme } from './theme.js';
-import { migrate } from './data.js';
+import { migrate, purgeDeleted } from './data.js';
 import { notFound } from './ui.js';
 import { recorder } from './views/train.js';
 import { trier, journalHome, journalFolder, clipView } from './views/journal.js';
@@ -46,6 +46,7 @@ window.addEventListener('hashchange', route);
 (async () => {
   const theme = await db.getMeta('theme');
   if (theme) applyTheme(theme);
+  try { await purgeDeleted(); } catch (err) { console.warn(err); }
   try { await migrate(); } catch (err) { console.warn('Migration impossible', err); }
   db.askPersistence();
   route();

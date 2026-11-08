@@ -111,7 +111,7 @@ export async function addClip({ blob, duration, bpm, metro, thumb, mime }) {
 }
 
 export async function allClips() {
-  return (await db.all('clips')).sort((a, b) => b.createdAt - a.createdAt);
+  return (await db.all('clips')).filter(c => !c.deleted).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function unsortedClips() {
@@ -136,6 +136,24 @@ export async function unplaceClip(clip) {
 export async function renameClip(clip, name) {
   clip.name = name.trim();
   return db.put('clips', clip);
+}
+
+// Suppression « douce » : le clip est caché mais sa vidéo reste, pour pouvoir annuler.
+// Elle n'est effacée pour de vrai qu'au prochain démarrage (purgeDeleted) ou quand l'historique l'oublie.
+export async function trashClip(id) {
+  const c = await db.get('clips', id); if (!c) return;
+  c.deleted = true; await db.put('clips', c);
+}
+export async function restoreClip(id) {
+  const c = await db.get('clips', id); if (!c) return;
+  c.deleted = false; await db.put('clips', c);
+}
+export async function purgeIfDeleted(id) {
+  const c = await db.get('clips', id);
+  if (c && c.deleted) await deleteClip(id);
+}
+export async function purgeDeleted() {
+  for (const c of await db.all('clips')) if (c.deleted) await deleteClip(c.id);
 }
 
 export async function deleteClip(id) {
@@ -173,7 +191,7 @@ export async function migrate() {
 export async function exportData() {
   return {
     app: 'carnet-de-jongle', version: 2, exportedAt: new Date().toISOString(),
-    agres: await db.all('agres'), figures: await db.all('figures'), clips: await db.all('clips'),
+    agres: await db.all('agres'), figures: await db.all('figures'), clips: (await db.all('clips')).filter(c => !c.deleted),
   };
 }
 
@@ -190,13 +208,13 @@ export async function importData(data) {
 const PART_BYTES = 250 * 1024 * 1024;
 
 export async function videoStats() {
-  const clips = await db.all('clips');
+  const clips = (await db.all('clips')).filter(c => !c.deleted);
   return { n: clips.length, bytes: clips.reduce((a, c) => a + (c.size || 0), 0) };
 }
 
 // Découpe en archives numérotées ; renvoie [{ name, blob, count }]
 export async function exportVideos(onProgress = () => {}) {
-  const clips = (await db.all('clips')).sort((a, b) => a.createdAt - b.createdAt);
+  const clips = (await db.all('clips')).filter(c => !c.deleted).sort((a, b) => a.createdAt - b.createdAt);
   const day = new Date().toISOString().slice(0, 10);
   const parts = [];
   let cur = [], curBytes = 0, done = 0;

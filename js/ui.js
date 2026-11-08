@@ -15,6 +15,8 @@ export const ICON = {
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>',
   dots: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>',
   cam: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>',
+  undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+  redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>',
   trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
 };
 
@@ -35,7 +37,7 @@ export function setView({ title, back = null, actions = [], body = '', fab = nul
 
   const top = document.getElementById('topActions');
   top.innerHTML = actions.map((a, i) =>
-    `<button class="icon-btn" data-i="${i}" aria-label="${esc(a.label)}">${a.icon}</button>`).join('');
+    `<button class="icon-btn" data-i="${i}" aria-label="${esc(a.label)}" ${a.disabled ? 'disabled' : ''}>${a.icon}</button>`).join('');
   top.querySelectorAll('button').forEach(b => { b.onclick = actions[+b.dataset.i].onClick; });
 
   const fabZone = document.getElementById('fabZone');

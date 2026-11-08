@@ -4,13 +4,14 @@ import * as media from '../media.js';
 import { CATALOG } from '../catalog.js';
 import {
   listAgres, reorderAgres, moveFolder, createAgres, renameAgres, deleteAgres, children, pathOf, subtree, addFolder, renameFolder, deleteFolder,
-  allClips, unsortedClips, addClip, clipsAt, placeClip, unplaceClip, renameClip, deleteClip,
+  allClips, unsortedClips, addClip, clipsAt, placeClip, unplaceClip, renameClip, deleteClip, trashClip, restoreClip, purgeIfDeleted,
 } from '../data.js';
 import { setView, onLeave, esc, ICON, toast, confirmBox, askText, actionSheet, fmtBytes, notFound, clipLabel } from '../ui.js';
 import { mountPlayer } from '../player.js';
 import { cutClip } from '../clipcut.js';
 import { pickClip } from './compare.js';
 import { enableDrag } from '../drag.js';
+import { record, undo, redo, canUndo, canRedo } from '../history.js';
 
 const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
@@ -18,30 +19,43 @@ const when = c => new Date(c.createdAt).toLocaleString('fr-FR', { day: 'numeric'
 const thumb = c => c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="">` : `<span class="clip-thumb">${ICON.cam}</span>`;
 const clipSub = c => [when(c), fmtDur(c.duration || 0), c.bpm ? `${c.bpm} BPM` : ''].filter(Boolean).join(' · ');
 
-// ---------- À trier ----------
-// Suppression « avec filet » : le clip disparaît de la liste, et n'est effacé qu'après 5 s sans annulation.
-let pendingDel = null;
-function commitPending() {
-  if (!pendingDel) return;
-  clearTimeout(pendingDel.timer);
-  const id = pendingDel.id; pendingDel = null;
-  deleteClip(id).catch(console.warn);
+// ---------- Annuler / rétablir ----------
+const histActions = () => [
+  { label: 'Annuler', icon: ICON.undo, disabled: !canUndo(), onClick: () => doHistory(undo, 'Annulé') },
+  { label: 'Rétablir', icon: ICON.redo, disabled: !canRedo(), onClick: () => doHistory(redo, 'Rétabli') },
+];
+async function doHistory(fn, word) {
+  const e = await fn();
+  if (!e) return;
+  toast(`${word} : ${e.label}`);
+  window.dispatchEvent(new HashChangeEvent('hashchange')); // redessine l'écran courant
 }
-function softDelete(id, refresh) {
-  commitPending();
-  const rec = { id, timer: 0 };
-  rec.timer = setTimeout(() => { if (pendingDel === rec) { pendingDel = null; deleteClip(id).catch(console.warn); } }, 5000);
-  pendingDel = rec;
-  refresh();
-  toast('Clip supprimé', {
-    action: 'Annuler', ms: 5000,
-    onAction: () => { if (pendingDel === rec) { clearTimeout(rec.timer); pendingDel = null; refresh(); } },
-  });
+const snap = c => ({ name: c.name || '', sorted: !!c.sorted, agresId: c.agresId || null, folderId: c.folderId || null });
+async function applyState(id, st) {
+  const c = await db.get('clips', id); if (!c) return;
+  Object.assign(c, st); await db.put('clips', c);
+}
+const undoToast = msg => toast(msg, { action: 'Annuler', ms: 5000, onAction: () => doHistory(undo, 'Annulé') });
+
+// Supprime (de façon réversible) un clip.
+async function trashWithUndo(id) {
+  await trashClip(id);
+  record({ label: 'suppression d\'un clip', undo: () => restoreClip(id), redo: () => trashClip(id), drop: () => purgeIfDeleted(id) });
+  undoToast('Clip supprimé');
+}
+// Range un clip (ou le remet dans « À trier » avec unplace = true), réversible.
+async function placeRecorded(c, { agresId = null, folderId = null, name, unplace = false, label = 'rangement d\'un clip' }) {
+  const before = snap(c);
+  if (name !== undefined) c.name = name;
+  if (unplace) await unplaceClip(c); else await placeClip(c, agresId, folderId);
+  const after = snap(c);
+  record({ label, undo: () => applyState(c.id, before), redo: () => applyState(c.id, after) });
 }
 
+// ---------- À trier ----------
 export async function trier() {
   const render = async () => {
-    const list = (await unsortedClips()).filter(c => !(pendingDel && pendingDel.id === c.id));
+    const list = await unsortedClips();
     const body = list.length ? `
       <p class="muted small" style="margin:0 2px 6px">Ouvre un clip pour l'analyser et le ranger. La corbeille supprime sans l'ouvrir.</p>
       <div class="list">${list.map(c => `
@@ -51,8 +65,8 @@ export async function trier() {
           <button class="icon-btn" data-del="${c.id}" aria-label="Supprimer ce clip">${ICON.trash}</button>
         </div>`).join('')}</div>`
       : `<div class="empty"><strong>Rien à trier</strong>Tous tes clips sont rangés.<br><a class="btn primary" href="#/entrainement">Filmer</a></div>`;
-    const v = setView({ title: 'À trier', back: '#/journal', tab: 'journal', body });
-    v.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => softDelete(b.dataset.del, render); });
+    const v = setView({ title: 'À trier', back: '#/journal', tab: 'journal', body, actions: histActions() });
+    v.querySelectorAll('[data-del]').forEach(b => { b.onclick = async () => { await trashWithUndo(b.dataset.del); render(); }; });
   };
   await render();
 }
@@ -91,7 +105,7 @@ export async function journalHome() {
         <span class="row-count">${count(a)}</span>${ICON.chev}</a>`).join('')}</div>`
       : `<div class="empty"><strong>Aucun agrès</strong>Crée un agrès pour ranger tes clips.</div>`}`;
   const v = setView({ title: 'Journal', tab: 'journal', body,
-    actions: [{ label: 'Réglages', icon: ICON.gear, onClick: () => { location.hash = '#/reglages'; } }], fab: { label: 'Agrès', icon: ICON.plus, onClick: async () => {
+    actions: [...histActions(), { label: 'Réglages', icon: ICON.gear, onClick: () => { location.hash = '#/reglages'; } }], fab: { label: 'Agrès', icon: ICON.plus, onClick: async () => {
     const a = await newAgresDialog();
     if (a) location.hash = `#/journal/a/${a.id}`;
   } } });
@@ -102,7 +116,9 @@ export async function journalHome() {
       const ids = agres.map(a => a.id).filter(x => x !== id);
       const i = ids.indexOf(targetId) + (where === 'after' ? 1 : 0);
       ids.splice(i, 0, id);
+      const oldIds = agres.map(a => a.id);
       await reorderAgres(ids);
+      record({ label: 'ordre des agrès', undo: () => reorderAgres(oldIds), redo: () => reorderAgres(ids) });
       journalHome();
     },
   });
@@ -133,7 +149,7 @@ export async function journalFolder(agresId, folderId = null) {
   const reload = () => journalFolder(agresId, folderId);
   const v = setView({
     title: here ? here.name : a.name, back, tab: 'journal', body,
-    actions: [{ label: 'Options', icon: ICON.dots, onClick: () => actionSheet(here ? here.name : a.name, here ? [
+    actions: [...histActions(), { label: 'Options', icon: ICON.dots, onClick: () => actionSheet(here ? here.name : a.name, here ? [
       { label: 'Renommer le dossier', onClick: async () => { const n = await askText({ title: 'Renommer le dossier', value: here.name }); if (n) { await renameFolder(a, here.id, n); reload(); } } },
       { label: 'Supprimer le dossier', danger: true, onClick: async () => {
         if (!await confirmBox({ title: 'Supprimer ce dossier ?', text: 'Son contenu (clips et sous-dossiers) remonte d\'un niveau. Aucune vidéo n\'est effacée.', ok: 'Supprimer', danger: true })) return;
@@ -156,7 +172,12 @@ export async function journalFolder(agresId, folderId = null) {
     rowSelector: '.drag-row', mode: 'nest', upSelector: here ? '#dropUp' : null,
     onDrop: async ({ id, targetId, where }) => {
       const dest = where === 'up' ? (here.parentId || null) : targetId;
+      const oldParent = (a.categories || []).find(f => f.id === id).parentId || null;
       const ok = await moveFolder(a, id, dest);
+      if (ok) {
+        const mv = to => async () => moveFolder(await db.get('agres', agresId), id, to);
+        record({ label: 'déplacement d\'un dossier', undo: mv(oldParent), redo: mv(dest) });
+      }
       const name = (a.categories || []).find(f => f.id === id).name;
       if (ok) toast(where === 'up' ? `« ${name} » est remonté d'un niveau` : `« ${name} » déplacé dans « ${(a.categories || []).find(f => f.id === targetId).name} »`);
       else toast('Déplacement impossible');
@@ -224,7 +245,7 @@ async function placeLabel(c) {
 // ---------- Fiche d'un clip : analyse + classement ----------
 export async function clipView(id) {
   const c = await db.get('clips', id);
-  if (!c) return notFound();
+  if (!c || c.deleted) return notFound();
   const file = await media.loadVideo(id, c.mime);
   const url = file ? URL.createObjectURL(file) : null;
   const place = await placeLabel(c);
@@ -249,7 +270,7 @@ export async function clipView(id) {
 
   const a = c.sorted ? await db.get('agres', c.agresId) : null;
   const back = c.sorted && a ? `#/journal/a/${a.id}${c.folderId ? '/' + c.folderId : ''}` : '#/trier';
-  const v = setView({ title: 'Clip', back, tab: 'journal', body });
+  const v = setView({ title: 'Clip', back, tab: 'journal', body, actions: histActions() });
   if (url) {
     const player = mountPlayer(v.querySelector('#player'), {
       url, duration: c.duration, extraits: c.extraits || [],
@@ -260,7 +281,7 @@ export async function clipView(id) {
         const nc = await addClip({ blob: r.blob, duration: r.duration, bpm: c.bpm, thumb: r.thumb, mime: r.mime });
         nc.name = `${c.name || clipLabel(c)} · extrait`; await db.put('clips', nc);
         const chosen = await pickPlace(nc, 'Clip créé. Où le ranger ?');
-        if (chosen) { await placeClip(nc, chosen.agresId, chosen.folderId); toast(`Clip rangé dans ${await placeLabel(nc)}`, { ms: 3000 }); }
+        if (chosen) { await placeRecorded(nc, chosen); undoToast(`Clip rangé dans ${await placeLabel(nc)}`); }
         else toast('Clip créé, il t\'attend dans « À trier »', { ms: 3000 });
       },
     });
@@ -272,10 +293,8 @@ export async function clipView(id) {
     const wasSorted = c.sorted;
     const chosen = await pickPlace(c);
     if (!chosen) return;
-    c.name = v.querySelector('#name').value.trim();
-    await placeClip(c, chosen.agresId, chosen.folderId);
-    const where = await placeLabel(c);
-    toast(`Rangé dans ${where}`);
+    await placeRecorded(c, { ...chosen, name: v.querySelector('#name').value.trim() });
+    undoToast(`Rangé dans ${await placeLabel(c)}`);
     if (!wasSorted && (await unsortedClips()).length) location.hash = '#/trier';
     else clipView(id);
   };
@@ -285,11 +304,10 @@ export async function clipView(id) {
     if (other) location.hash = `#/comparer/${id}/${other}`;
   };
   const un = v.querySelector('#unsort');
-  if (un) un.onclick = async () => { await unplaceClip(c); toast('Remis dans « À trier »'); clipView(id); };
+  if (un) un.onclick = async () => { await placeRecorded(c, { unplace: true }); undoToast('Remis dans « À trier »'); clipView(id); };
   v.querySelector('#del').onclick = async () => {
-    if (!await confirmBox({ title: 'Supprimer ce clip ?', text: 'La vidéo sera effacée du téléphone. Impossible d\'annuler.', ok: 'Supprimer', danger: true })) return;
-    await deleteClip(id);
-    toast('Clip supprimé');
+    if (!await confirmBox({ title: 'Supprimer ce clip ?', text: 'La vidéo est retirée. Tu peux annuler tant que l\'appli reste ouverte.', ok: 'Supprimer', danger: true })) return;
+    await trashWithUndo(id);
     location.hash = back;
   };
 }
