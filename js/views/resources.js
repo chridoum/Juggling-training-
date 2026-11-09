@@ -1,7 +1,7 @@
 // Ressources : tes références d'apprentissage, à part de tes propres clips.
 // Deux formes : une vidéo importée (analysable et comparable) ou une simple fiche-lien.
 import * as db from '../db.js';
-import { listAgres, allRefs, addVideoRef, addLinkRef, updateRef, addSegment, loadClipVideo, reorderRefs } from '../data.js';
+import { listAgres, reorderAgres, allRefs, addVideoRef, addLinkRef, updateRef, addSegment, loadClipVideo, reorderRefs } from '../data.js';
 import { enableDrag } from '../drag.js';
 import { record } from '../history.js';
 import { setView, onLeave, esc, ICON, toast, confirmBox, askText, actionSheet, fmtBytes, notFound } from '../ui.js';
@@ -122,12 +122,13 @@ export async function resources() {
   const [refs, agres] = await Promise.all([allRefs(), listAgres()]);
   const loose = refs.filter(r => isLoose(r, agres)).length;
   const rows = [
-    ...agres.map(a => ({ href: `#/ressources/a/${a.id}`, name: a.name, n: refs.filter(r => r.agresId === a.id).length })),
+    ...agres.map(a => ({ id: a.id, href: `#/ressources/a/${a.id}`, name: a.name, n: refs.filter(r => r.agresId === a.id).length })),
     ...(loose ? [{ href: '#/ressources/a/aucun', name: 'Sans agrès', n: loose }] : []),
   ];
   const body = `
     <input type="file" id="refFile" accept="video/*" hidden>
-    ${rows.length ? `<div class="list">${rows.map(r => `<a class="row" href="${r.href}">
+    ${agres.length > 1 ? '<p class="muted small hint">Appui long sur un agrès pour changer l\'ordre (le même que dans le Journal).</p>' : ''}
+    ${rows.length ? `<div class="list" id="agList">${rows.map(r => `<a class="row${r.id ? ' drag-row' : ''}" draggable="false" ${r.id ? `data-id="${r.id}"` : ''} href="${r.href}">
         <span class="row-main"><span class="row-title">${esc(r.name)}</span></span>
         <span class="row-count">${r.n}</span>${ICON.chev}</a>`).join('')}</div>`
       : `<div class="empty"><strong>Aucun agrès</strong>Crée un agrès dans le Journal, ou ajoute directement une référence.</div>`}
@@ -139,6 +140,18 @@ export async function resources() {
     fab: { label: 'Ajouter', icon: ICON.plus, onClick: () => addSheet() },
   });
   bindImport(v, null);
+  const list = v.querySelector('#agList');
+  if (list) enableDrag(list, {
+    rowSelector: '.drag-row', mode: 'sort',
+    onDrop: async ({ id, targetId, where }) => {
+      const oldIds = agres.map(a => a.id);
+      const ids = oldIds.filter(x => x !== id);
+      ids.splice(ids.indexOf(targetId) + (where === 'after' ? 1 : 0), 0, id);
+      await reorderAgres(ids);
+      record({ label: 'ordre des agrès', undo: () => reorderAgres(oldIds), redo: () => reorderAgres(ids) });
+      resources();
+    },
+  });
 }
 
 // ---------- Niveau 2 : les références d'un agrès ----------
@@ -150,7 +163,8 @@ export async function resourcesAgres(agresId) {
   const mine = refs.filter(r => loose ? isLoose(r, agres) : r.agresId === agresId);
   const body = `
     <input type="file" id="refFile" accept="video/*" hidden>
-    ${mine.length > 1 ? '<p class="muted small hint">Appui long sur une ligne pour changer l\'ordre.</p>' : ''}
+    <div class="drop-up" id="dropUp">Déposer ici pour changer d'agrès</div>
+    ${mine.length ? '<p class="muted small hint">Appui long sur une ligne pour changer l\'ordre ou l\'agrès.</p>' : ''}
     ${mine.length ? `<div class="list" id="refList">${mine.map(refRow).join('')}</div>`
       : `<div class="empty"><strong>Aucune référence</strong>Importe une vidéo ou ajoute un lien pour cet agrès.</div>`}`;
   const v = setView({
@@ -173,8 +187,21 @@ export async function resourcesAgres(agresId) {
   });
   const list = v.querySelector('#refList');
   if (list) enableDrag(list, {
-    rowSelector: '.drag-row', mode: 'sort',
+    rowSelector: '.drag-row', mode: 'sort', upSelector: '#dropUp',
     onDrop: async ({ id, targetId, where }) => {
+      if (where === 'up') {
+        const r = mine.find(x => x.id === id);
+        const from = r.agresId || null;
+        const to = await pickAgres(from);
+        if (to === undefined || to === from) return;
+        await updateRef(r, { agresId: to });
+        const set = v => () => db.get('clips', id).then(x => updateRef(x, { agresId: v }));
+        record({ label: 'changement d\'agrès', undo: set(from), redo: set(to) });
+        const dest = to ? (agres.find(x => x.id === to) || {}).name : 'Sans agrès';
+        toast(`Déplacé dans ${dest}`);
+        resourcesAgres(agresId);
+        return;
+      }
       const oldIds = mine.map(r => r.id);
       const ids = oldIds.filter(x => x !== id);
       ids.splice(ids.indexOf(targetId) + (where === 'after' ? 1 : 0), 0, id);
