@@ -2,7 +2,7 @@
 // Stratégie « réseau d'abord » : en ligne, on récupère toujours la dernière version ;
 // hors ligne, on sert la copie gardée en cache.
 
-const CACHE = 'juglog-v14';
+const CACHE = 'juglog-v15';
 const SHELL = [
   './',
   './index.html',
@@ -43,8 +43,28 @@ self.addEventListener('activate', e => {
   );
 });
 
+// Partage Android : le téléphone envoie un POST ; on met de côté le contenu et
+// on renvoie l'appli sur #/partage, qui le récupère.
+async function stashShare(req) {
+  const fd = await req.formData();
+  const c = await caches.open('juglog-share');
+  const file = fd.get('media');
+  if (file && file.size) {
+    await c.put('shared-file', new Response(file, {
+      headers: { 'content-type': file.type || 'video/mp4', 'x-filename': encodeURIComponent(file.name || '') },
+    }));
+  }
+  const text = ['title', 'text', 'url'].map(k => fd.get(k)).filter(Boolean).join(' ').trim();
+  if (text) await c.put('shared-text', new Response(text));
+  return Response.redirect(new URL('#/partage', self.registration.scope).href, 303);
+}
+
 self.addEventListener('fetch', e => {
   const req = e.request;
+  if (req.method === 'POST' && new URL(req.url).pathname.endsWith('/share')) {
+    e.respondWith(stashShare(req).catch(() => Response.redirect(new URL('#/ressources', self.registration.scope).href, 303)));
+    return;
+  }
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
     fetch(req)

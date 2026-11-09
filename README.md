@@ -4,7 +4,7 @@ Application web installable (PWA) pour s'entraîner à la jonglerie et aux flow 
 
 - **Entraînement** : ouvre directement l'enregistreur (clips enchaînés, métronome intégré à la vidéo). À l'arrêt, la liste des clips à trier s'affiche.
 - **Journal** : les agrès et leurs dossiers (arborescence libre). On analyse un clip (ralenti, image par image, boucle A-B, extraits, comparaison) puis on le range ; plusieurs clips peuvent aller dans le même dossier.
-- **Ressources** : des liens pour apprendre, agrès par agrès.
+- **Ressources** : tes références d'apprentissage, à part de tes clips — vidéos importées (analysables et comparables à tes essais) et fiches-liens. Sur Android, partager une vidéo ou un lien vers Juglog l'ajoute directement ici.
 
 Tout reste sur le téléphone : aucune donnée n'est envoyée sur internet.
 

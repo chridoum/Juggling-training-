@@ -20,7 +20,7 @@ const thumb = c => c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="">` 
 const clipSub = c => [when(c), fmtDur(c.duration || 0), c.bpm ? `${c.bpm} BPM` : ''].filter(Boolean).join(' · ');
 
 // ---------- Annuler / rétablir ----------
-const histActions = () => [
+export const histActions = () => [
   { label: 'Annuler', icon: ICON.undo, disabled: !canUndo(), onClick: () => doHistory(undo, 'Annulé') },
   { label: 'Rétablir', icon: ICON.redo, disabled: !canRedo(), onClick: () => doHistory(redo, 'Rétabli') },
 ];
@@ -38,10 +38,10 @@ async function applyState(id, st) {
 const undoToast = msg => toast(msg, { action: 'Annuler', ms: 5000, onAction: () => doHistory(undo, 'Annulé') });
 
 // Supprime (de façon réversible) un clip.
-async function trashWithUndo(id) {
+export async function trashWithUndo(id, label = 'suppression d\'un clip') {
   await trashClip(id);
-  record({ label: 'suppression d\'un clip', undo: () => restoreClip(id), redo: () => trashClip(id), drop: () => purgeIfDeleted(id) });
-  undoToast('Clip supprimé');
+  record({ label, undo: () => restoreClip(id), redo: () => trashClip(id), drop: () => purgeIfDeleted(id) });
+  undoToast(label === 'suppression d\'un clip' ? 'Clip supprimé' : 'Référence supprimée');
 }
 // Range un clip (ou le remet dans « À trier » avec unplace = true), réversible.
 async function placeRecorded(c, { agresId = null, folderId = null, name, unplace = false, label = 'rangement d\'un clip' }) {

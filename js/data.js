@@ -111,7 +111,7 @@ export async function addClip({ blob, duration, bpm, metro, thumb, mime }) {
 }
 
 export async function allClips() {
-  return (await db.all('clips')).filter(c => !c.deleted).sort((a, b) => b.createdAt - a.createdAt);
+  return (await db.all('clips')).filter(c => !c.deleted && !c.ref).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export async function unsortedClips() {
@@ -164,7 +164,7 @@ export async function deleteClip(id) {
 // Ancien modèle (clips rattachés à des figures) → nouveau : chaque figure qui avait des clips
 // devient un dossier de son agrès (sous sa catégorie), les autres clips restent « à trier ».
 export async function migrate() {
-  const clips = (await db.all('clips')).filter(c => c.sorted === undefined);
+  const clips = (await db.all('clips')).filter(c => c.sorted === undefined && !c.ref);
   if (!clips.length) return;
   const agresById = Object.fromEntries((await db.all('agres')).map(a => [a.id, a]));
   const figs = Object.fromEntries((await db.all('figures')).map(f => [f.id, f]));
@@ -185,6 +185,38 @@ export async function migrate() {
     await db.put('clips', c);
   }
   for (const id of touched) await db.put('agres', agresById[id]);
+}
+
+// ---------- Références (espace à part : tutoriels importés et liens) ----------
+// Une référence vit dans le même magasin que les clips, mais avec ref:true : elle n'apparaît
+// jamais dans « À trier » ni dans le journal. Elle est simplement rattachée à un agrès (ou à aucun).
+export async function allRefs() {
+  return (await db.all('clips')).filter(c => c.ref && !c.deleted)
+    .sort((a, b) => cmp(a.name || '', b.name || '') || b.createdAt - a.createdAt);
+}
+
+export async function addVideoRef({ blob, mime, duration, thumb, name, agresId = null }) {
+  const id = db.uid();
+  await media.saveVideo(id, blob);
+  return db.put('clips', {
+    id, ref: true, kind: 'video', name: (name || '').trim(), url: null, agresId: agresId || null,
+    duration: duration || 0, thumb: thumb || null, mime: mime || blob.type, size: blob.size,
+    sorted: true, folderId: null, bpm: null, metro: null,
+  });
+}
+
+export async function addLinkRef({ url, name, agresId = null }) {
+  return db.put('clips', {
+    id: db.uid(), ref: true, kind: 'lien', name: (name || '').trim(), url: String(url).trim(),
+    agresId: agresId || null, duration: 0, thumb: null, mime: null, size: 0,
+    sorted: true, folderId: null, bpm: null, metro: null,
+  });
+}
+
+export async function updateRef(ref, patch) {
+  Object.assign(ref, patch);
+  if (typeof ref.name === 'string') ref.name = ref.name.trim();
+  return db.put('clips', ref);
 }
 
 // ---------- Sauvegarde (classement, sans vidéos) ----------

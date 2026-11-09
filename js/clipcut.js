@@ -1,4 +1,4 @@
-// Découpe un passage d'une vidéo en un nouveau clip.
+// Outils sur les fichiers vidéo : lecture des informations d'un fichier, découpe d'un passage.
 // Le passage est relu puis ré-enregistré : cela prend donc la durée du passage (pas de bibliothèque externe).
 const MIMES = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
 
@@ -52,4 +52,37 @@ export async function cutClip(url, start, end, onProgress = () => {}) {
 
   const type = (rec.mimeType || mime || 'video/webm').split(';')[0];
   return { blob: new Blob(chunks, { type }), mime: type, duration, thumb };
+}
+
+// Durée et vignette d'un fichier vidéo choisi par l'utilisateur.
+// Ne lève jamais : si le navigateur ne sait pas lire le fichier, on renvoie ce qu'on a.
+export async function probeVideo(file) {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.src = url; v.muted = true; v.playsInline = true; v.preload = 'auto';
+  const limit = ms => new Promise(res => setTimeout(res, ms));
+  // Un fichier que le navigateur ne sait pas lire déclenche « error » : on n'attend pas pour rien.
+  const bad = once(v, 'error').then(() => 'ko');
+  let duration = 0, thumb = null, width = 0;
+  try {
+    if (await Promise.race([once(v, 'loadedmetadata').then(() => 'ok'), bad, limit(6000)]) === 'ko') throw new Error('format non lu');
+    duration = isFinite(v.duration) ? v.duration : 0;
+    if (!duration && v.duration === Infinity) { // WebM sans durée écrite
+      v.currentTime = 1e101;
+      await Promise.race([once(v, 'timeupdate'), bad, limit(3000)]);
+      duration = isFinite(v.duration) ? v.duration : 0;
+    }
+    width = v.videoWidth || 0;
+    v.currentTime = Math.min(1, (duration || 3) / 3);
+    await Promise.race([once(v, 'seeked'), bad, limit(3000)]);
+    if (v.videoWidth) {
+      const c = document.createElement('canvas');
+      c.width = 240; c.height = Math.round(240 * v.videoHeight / v.videoWidth);
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      thumb = c.toDataURL('image/jpeg', 0.7);
+    }
+  } catch (err) { console.warn('Lecture du fichier impossible', err); }
+  v.removeAttribute('src'); v.load();
+  URL.revokeObjectURL(url);
+  return { duration: Math.round(duration * 10) / 10, thumb, width };
 }

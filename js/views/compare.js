@@ -2,7 +2,7 @@
 // avec un repère par clip pour caler le départ du geste.
 import * as db from '../db.js';
 import * as media from '../media.js';
-import { allClips } from '../data.js';
+import { allClips, allRefs } from '../data.js';
 import { setView, onLeave, esc, toast, notFound, clipLabel } from '../ui.js';
 
 const fmt = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(2).padStart(5, '0')}`; };
@@ -10,12 +10,13 @@ const SPEEDS = [0.1, 0.25, 0.5, 1];
 
 // Choix d'un clip (boîte de dialogue), les plus récents d'abord.
 export async function pickClip(excludeId) {
-  const list = (await allClips()).filter(c => c.id !== excludeId).slice(0, 60);
+  const [clips, refs] = await Promise.all([allClips(), allRefs()]);
+  const list = [...clips, ...refs.filter(r => r.kind !== 'lien')].filter(c => c.id !== excludeId).slice(0, 80);
   const d = document.getElementById('modal');
   d.innerHTML = `<h3>Comparer avec…</h3>
     <div class="pick-list">${list.length ? list.map(c => `<button class="pick clip-pick" data-id="${c.id}">
         ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="" style="width:64px;height:40px">` : ''}
-        <span>${esc(clipLabel(c))}<small>${c.bpm ? `${c.bpm} BPM` : ''}</small></span></button>`).join('')
+        <span>${esc(clipLabel(c))}<small>${c.ref ? 'Référence' : c.bpm ? `${c.bpm} BPM` : ''}</small></span></button>`).join('')
       : '<small class="muted">Pas d\'autre clip à comparer pour l\'instant.</small>'}</div>
     <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Annuler</button></div>`;
   return new Promise(resolve => {
@@ -58,7 +59,7 @@ export async function compare(idA, idB) {
       <p class="muted small">Pose un repère ⚑ sur chaque clip au moment où le geste commence : la lecture et « ⏮ » repartent de ces repères.</p>
     </div>`;
 
-  const v = setView({ title: 'Comparer', back: `#/clip/${idA}`, tab: 'journal', body });
+  const v = setView({ title: 'Comparer', back: ca.ref ? `#/ressource/${idA}` : `#/clip/${idA}`, tab: ca.ref ? 'resources' : 'journal', body });
   const vids = [...v.querySelectorAll('video')];
   const marks = [0, 0];
   let fd = 1 / 30, raf = 0, dead = false;
