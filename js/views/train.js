@@ -1,11 +1,13 @@
 // Entraînement : on arrive directement sur l'écran d'enregistrement.
 // À l'arrêt, on file vers la liste des clips à trier.
 import { Metronome, makeTapper } from '../metronome.js';
+import { MusicLoop, listMusics, getMusic, importMusic, removeMusic, updateMusic, loadBuffer, peaks, snap, nextBeat } from '../music.js';
 import { addClip, unsortedClips } from '../data.js';
 import { setView, onLeave, esc, ICON, toast } from '../ui.js';
+const fmtBpm = b => (Math.round(b * 10) / 10).toLocaleString('fr-FR');
 
 const MIMES = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-const DEFAULTS = { chain: true, bpm: 100, beats: 4, dur: 60, casque: false, metroOn: true, palier: 0, facing: 'environment' };
+const DEFAULTS = { chain: true, bpm: 100, beats: 4, dur: 60, casque: false, metroOn: true, facing: 'environment', musicId: null };
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function loadPrefs() {
@@ -33,6 +35,14 @@ export async function recorder() {
     <div class="rec-err" id="err" hidden></div>
 
     <div class="sheet" id="sheet" hidden>
+      <div class="opt"><span>Musique</span>
+        <button class="music-row" id="musicBtn"><span class="row-main"><span class="row-title" id="musicName">Aucune</span><span class="row-sub" id="musicSub"></span></span>${ICON.chev}</button>
+        <div id="musicBox" hidden>
+          <canvas id="wave" aria-label="Passage joué en boucle : fais glisser pour le choisir"></canvas>
+          <div class="btn-row"><button class="btn" id="align">Caler le clic</button><button class="btn" id="half">Tempo ÷2</button><button class="btn" id="double">Tempo ×2</button></div>
+          <p class="small muted" id="alignHint" hidden>Tape « Caler » sur chaque temps, en commençant sur un « 1 » (au moins 4 fois).</p>
+        </div>
+      </div>
       <div class="bpm-row">
         <button class="btn" id="m5" aria-label="Moins 5">−5</button>
         <button class="btn" id="m1" aria-label="Moins 1">−1</button>
@@ -53,7 +63,6 @@ export async function recorder() {
       <div class="opt"><span>Écoute</span><div class="seg">
         <button data-casque="0" aria-pressed="${!P.casque}">Haut-parleur</button>
         <button data-casque="1" aria-pressed="${P.casque}">Casque</button></div></div>
-      <div class="opt"><span>Tempo après chaque clip</span><div class="chips">${chips('palier', [0, 2, 5, 10], P.palier, v => v ? '+' + v : 'inchangé')}</div></div>
     </div>
 
     <div class="rec-bottom">
@@ -77,6 +86,10 @@ export async function recorder() {
   const recDest = ctx.createMediaStreamDestination();
   const metro = new Metronome(ctx, recDest);
   metro.bpm = P.bpm; metro.beats = P.beats; metro.setRouting({ recording: P.casque });
+  const loop = new MusicLoop(ctx, recDest);
+  loop.setRouting({ recording: P.casque });
+  const clickGain = () => { metro.out.gain.value = P.metroOn ? 0.9 : 0; };
+  clickGain();
   const beatEl = $('#beat');
   metro.onBeat = (n, accent) => {
     beatEl.classList.remove('on', 'accent');
@@ -123,11 +136,33 @@ export async function recorder() {
   const sheet = $('#sheet');
   $('#settingsBtn').onclick = () => { if (!recording && !counting) sheet.hidden = !sheet.hidden; };
 
-  const showBpm = () => { $('#bpm').textContent = P.bpm; $('#bpmShort').textContent = P.bpm; metro.bpm = P.bpm; savePrefs(P); };
-  const addBpm = d => { P.bpm = Math.max(30, Math.min(260, P.bpm + d)); showBpm(); };
-  $('#m5').onclick = () => addBpm(-5); $('#m1').onclick = () => addBpm(-1);
-  $('#p1').onclick = () => addBpm(1); $('#p5').onclick = () => addBpm(5);
-  $('#tap').onclick = () => { const b = tap(); if (b) { P.bpm = Math.max(30, Math.min(260, b)); showBpm(); } };
+  // --- Musique ---
+  let music = null, mbuf = null, mpk = null, onSegHook = null;
+  const curBpm = () => (music && music.bpm ? music.bpm : P.bpm);
+  const winLen = () => (music ? Math.min(P.dur, music.duration) : 0);
+  let saveT = null;
+  const saveMusic = () => { clearTimeout(saveT); saveT = setTimeout(() => music && updateMusic(music), 400); };
+
+  const showBpm = () => {
+    const b = curBpm();
+    $('#bpm').textContent = music ? fmtBpm(b) : b; $('#bpmShort').textContent = music ? Math.round(b) : b;
+    metro.bpm = b;
+    const st = music ? [1, 0.1] : [5, 1];
+    [['#m5', -st[0]], ['#m1', -st[1]], ['#p1', st[1]], ['#p5', st[0]]].forEach(([id, d]) => {
+      const el = $(id); el.textContent = (d > 0 ? '+' : '−') + String(Math.abs(d)).replace('.', ','); el.dataset.d = d;
+    });
+    savePrefs(P);
+  };
+  const setBpm = b => {
+    b = Math.max(30, Math.min(260, Math.round(b * 100) / 100));
+    if (music) {
+      music.bpm = b; music.loopStart = snap(music.loopStart, b, music.phase, music.duration, winLen()); saveMusic();
+      drawWave(); if (testing) restartAudio();
+    } else P.bpm = Math.round(b);
+    showBpm();
+  };
+  ['#m5', '#m1', '#p1', '#p5'].forEach(id => { $(id).onclick = e => setBpm(curBpm() + +e.currentTarget.dataset.d); });
+  $('#tap').onclick = () => { const b = tap(); if (b) setBpm(b); };
 
   const pick = (attr, apply) => v.querySelectorAll(`[data-${attr}]`).forEach(b => {
     b.onclick = () => {
@@ -136,15 +171,18 @@ export async function recorder() {
     };
   });
   pick('beats', x => { P.beats = +x; metro.beats = P.beats; });
-  pick('dur', x => { P.dur = +x; });
+  pick('dur', x => {
+    P.dur = +x;
+    if (music) { music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, winLen()); saveMusic(); drawWave(); if (testing) restartAudio(); }
+  });
   pick('chain', x => { P.chain = x === '1'; });
-  pick('palier', x => { P.palier = +x; });
-  pick('casque', x => { P.casque = x === '1'; metro.setRouting({ recording: P.casque }); });
+  pick('casque', x => { P.casque = x === '1'; metro.setRouting({ recording: P.casque }); loop.setRouting({ recording: P.casque }); });
 
   $('#metroOn').onclick = e => {
     P.metroOn = !P.metroOn; savePrefs(P);
     e.currentTarget.setAttribute('aria-pressed', P.metroOn);
     e.currentTarget.textContent = `Clic : ${P.metroOn ? 'oui' : 'non'}`;
+    clickGain();
   };
 
   let testing = false;
@@ -152,13 +190,167 @@ export async function recorder() {
     if (recording || counting) return;
     await ctx.resume();
     testing = !testing;
-    if (testing) { metro.start(); e.currentTarget.textContent = 'Arrêter'; }
-    else { metro.stop(); e.currentTarget.textContent = 'Tester'; }
+    if (testing) { startAudio(ctx.currentTime + 0.05); e.currentTarget.textContent = 'Arrêter'; }
+    else { stopAudio(); e.currentTarget.textContent = 'Tester'; }
   };
+  const stopTest = () => { if (testing) { testing = false; stopAudio(); $('#test').textContent = 'Tester'; } };
+
+  // Démarre la musique (si choisie) et le métronome calé sur ses temps, ou le métronome seul.
+  function startAudio(at) {
+    if (music && mbuf) {
+      const from = music.loopStart;
+      loop.start(mbuf, {
+        from, len: winLen(), at,
+        onSegment: t => {
+          const nb = nextBeat(from, music.bpm, music.phase, P.beats);
+          if (!metro.running) metro.start(t + (nb.at - from), nb.n); else metro.resync(t + (nb.at - from), nb.n);
+          if (onSegHook) onSegHook(t);
+        },
+      });
+      playhead();
+    } else if (P.metroOn) metro.start(at);
+  }
+  function stopAudio() { loop.stop(); metro.stop(); drawWave(); }
+  function restartAudio() { stopAudio(); startAudio(ctx.currentTime + 0.05); }
   $('#flip').onclick = () => {
     if (recording || counting) return;
     P.facing = P.facing === 'user' ? 'environment' : 'user'; savePrefs(P); openCamera();
   };
+
+  // --- Musique : affichage et choix ---
+  const wave = $('#wave');
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function drawWave() {
+    if (!music || !mpk) return;
+    const dpr = window.devicePixelRatio || 1, W = wave.clientWidth || 300, H = 72;
+    wave.width = W * dpr; wave.height = H * dpr;
+    const g = wave.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const D = music.duration, x = t => (t / D) * W;
+    const a = music.loopStart, b = a + winLen();
+    g.fillStyle = css('--accent'); g.globalAlpha = 0.18; g.fillRect(x(a), 0, Math.max(2, x(b) - x(a)), H); g.globalAlpha = 1;
+    for (let i = 0; i < W; i++) {
+      const t = (i / W) * D, h = Math.max(1, mpk[Math.floor((i / W) * mpk.length)] * (H - 8));
+      g.fillStyle = t >= a && t <= b ? css('--accent') : css('--text-2');
+      g.globalAlpha = t >= a && t <= b ? 1 : 0.45;
+      g.fillRect(i, (H - h) / 2, 1, h);
+    }
+    g.globalAlpha = 1;
+    // Temps dans la boucle (les « 1 » plus marqués), pour vérifier le calage d'un coup d'œil.
+    if (music.bpm && x(60 / music.bpm) > 3) {
+      const nb = nextBeat(a, music.bpm, music.phase, P.beats);
+      for (let t = nb.at, n = nb.n; t <= b; t += 60 / music.bpm, n = (n + 1) % P.beats) {
+        g.fillStyle = css('--text'); g.globalAlpha = n === 0 ? 0.9 : 0.35;
+        g.fillRect(Math.round(x(t)), 0, 1, n === 0 ? 10 : 6);
+      }
+      g.globalAlpha = 1;
+    }
+    if (loop.running) { g.fillStyle = css('--text'); g.fillRect(Math.round(x(loop.position())), 0, 2, H); }
+  }
+  function playhead() {
+    const step = () => { if (!loop.running) return; drawWave(); requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+
+  function showMusic() {
+    $('#musicName').textContent = music ? music.name : 'Aucune';
+    $('#musicSub').textContent = music ? (music.bpm ? `${fmtBpm(music.bpm)} BPM · boucle de ${Math.round(winLen())} s` : 'Tempo non trouvé : règle-le à la main') : 'Le clic seul';
+    $('#musicBox').hidden = !music;
+    showBpm(); drawWave();
+  }
+
+  async function selectMusic(m) {
+    stopTest();
+    music = null; mbuf = null; mpk = null;
+    P.musicId = m ? m.id : null; savePrefs(P);
+    if (m) {
+      $('#musicName').textContent = 'Chargement…';
+      try {
+        mbuf = await loadBuffer(m, ctx); mpk = peaks(mbuf, 600); music = m;
+        music.loopStart = snap(music.loopStart || 0, music.bpm, music.phase, music.duration, Math.min(P.dur, music.duration));
+      } catch (err) {
+        console.warn(err); toast('Morceau illisible : ' + (err.message || err), { ms: 4000 });
+        P.musicId = null; savePrefs(P);
+      }
+    }
+    showMusic();
+  }
+
+  // Fenêtre de choix du morceau : liste mémorisée, import, suppression (deux appuis).
+  async function chooseMusic() {
+    const list = await listMusics();
+    const d = document.getElementById('modal');
+    d.innerHTML = `<h3>Musique</h3>
+      <div class="pick-list">
+        ${list.map(m => `<div class="pick-line"><button class="pick" data-m="${m.id}"><span>${esc(m.name)}${music && music.id === m.id ? ' ✓' : ''}<small>${m.bpm ? ' · ' + fmtBpm(m.bpm) + ' BPM' : ''}</small></span></button>
+          <button class="icon-btn" data-delm="${m.id}" aria-label="Supprimer ce morceau">${ICON.trash}</button></div>`).join('')}
+        <button class="pick" data-m="">Sans musique${music ? '' : ' ✓'}</button>
+        <button class="pick add" id="impM">+ Importer un morceau</button>
+      </div>
+      <input type="file" id="mFile" accept="audio/*" hidden>
+      <p class="small">Fichiers audio du téléphone (MP3, M4A…). Les morceaux de Spotify ou Deezer sont protégés et ne peuvent pas être lus ici.</p>
+      <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Fermer</button></div>`;
+    d.querySelector('[value=cancel]').onclick = () => d.close();
+    d.querySelectorAll('[data-m]').forEach(b => { b.onclick = async () => { d.close(); await selectMusic(list.find(m => m.id === b.dataset.m) || null); }; });
+    d.querySelectorAll('[data-delm]').forEach(b => {
+      b.onclick = async () => {
+        if (!b.classList.contains('armed')) { b.classList.add('armed'); b.innerHTML = 'Suppr. ?'; return; }
+        if (music && music.id === b.dataset.delm) await selectMusic(null);
+        await removeMusic(b.dataset.delm); d.close(); chooseMusic();
+      };
+    });
+    d.querySelector('#impM').onclick = () => d.querySelector('#mFile').click();
+    d.querySelector('#mFile').onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      d.close(); toast('Analyse du morceau…', { ms: 6000 });
+      try { const m = await importMusic(f, ctx); await selectMusic(m); toast(m.bpm ? `Tempo trouvé : ${fmtBpm(m.bpm)} BPM` : 'Tempo non trouvé : règle-le à la main', { ms: 3000 }); }
+      catch (err) { console.warn(err); toast('Ce fichier audio n\'a pas pu être lu', { ms: 4000 }); }
+    };
+    if (!d.open) d.showModal();
+  }
+  $('#musicBtn').onclick = () => { if (!recording && !counting) chooseMusic(); };
+
+  // Glisser sur la forme d'onde : déplace le passage joué (calé sur un temps).
+  let dragW = false;
+  const moveWin = e => {
+    const r = wave.getBoundingClientRect(), t = ((e.clientX - r.left) / r.width) * music.duration - winLen() / 2;
+    music.loopStart = snap(t, music.bpm, music.phase, music.duration, winLen());
+    drawWave();
+  };
+  wave.addEventListener('pointerdown', e => { if (!music || recording) return; dragW = true; wave.setPointerCapture(e.pointerId); moveWin(e); });
+  wave.addEventListener('pointermove', e => { if (dragW) moveWin(e); });
+  const endWin = () => { if (!dragW) return; dragW = false; saveMusic(); showMusic(); if (testing) restartAudio(); };
+  wave.addEventListener('pointerup', endWin); wave.addEventListener('pointercancel', endWin);
+
+  $('#half').onclick = () => music && setBpm(music.bpm / 2);
+  $('#double').onclick = () => music && setBpm(music.bpm * 2);
+
+  // Caler le clic : on tape sur les temps entendus ; on en déduit où tombent les « 1 ».
+  let taps = [], alignT = null;
+  $('#align').onclick = async () => {
+    if (!music || !music.bpm) return;
+    if (!testing) { await ctx.resume(); testing = true; $('#test').textContent = 'Arrêter'; startAudio(ctx.currentTime + 0.05); taps = []; $('#alignHint').hidden = false; return; }
+    $('#alignHint').hidden = false;
+    // Ce qu'on entend sort avec un léger retard : on compense pour retrouver l'instant du morceau.
+    const lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+    taps.push(loop.position(ctx.currentTime - lat));
+    $('#align').textContent = `Caler (${taps.length})`;
+    clearTimeout(alignT);
+    alignT = setTimeout(() => {
+      if (taps.length >= 4) {
+        const Pd = 60 / music.bpm;
+        let sx = 0, sy = 0;
+        taps.forEach(p => { const a = (2 * Math.PI * (((p % Pd) + Pd) % Pd)) / Pd; sx += Math.cos(a); sy += Math.sin(a); });
+        const res = ((Math.atan2(sy, sx) / (2 * Math.PI)) * Pd + Pd) % Pd;
+        music.phase = Math.round((res + Math.round((taps[0] - res) / Pd) * Pd) * 1000) / 1000;
+        music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, winLen());
+        saveMusic(); restartAudio(); drawWave();
+        toast('Clic calé sur la musique');
+      } else toast('Il faut au moins 4 appuis');
+      taps = []; $('#align').textContent = 'Caler le clic'; $('#alignHint').hidden = true;
+    }, 1800);
+  };
+  new ResizeObserver(() => drawWave()).observe(wave);
+  getMusic(P.musicId).then(m => (m ? selectMusic(m) : showMusic()));
 
   // --- Enregistrement ---
   const recBtn = $('#rec');
@@ -185,7 +377,7 @@ export async function recorder() {
 
   async function startCountdown() {
     if (counting || recording) return;
-    if (testing) { testing = false; metro.stop(); $('#test').textContent = 'Tester'; }
+    stopTest();
     await ctx.resume();
     counting = true; sheet.hidden = true; $('#flip').hidden = true;
     const c = $('#count'); c.hidden = false;
@@ -215,7 +407,7 @@ export async function recorder() {
     const c = {
       rec, chunks: [], startMs: performance.now(), endMs: 0, thumb: null,
       mime: (rec.mimeType || mime || 'video/webm').split(';')[0],
-      meta: P.metroOn ? { bpm: P.bpm, beats: P.beats, injected: P.casque, offsetMs: Math.round(metro.msToNextBeat()) } : null,
+      meta: (P.metroOn || music) ? { bpm: curBpm(), beats: P.beats, injected: P.casque, offsetMs: Math.round(metro.msToNextBeat()), ...(music ? { music: music.name } : {}) } : null,
     };
     rec.ondataavailable = e => { if (e.data && e.data.size) c.chunks.push(e.data); };
     pending++;
@@ -229,11 +421,24 @@ export async function recorder() {
     if (c.rec.state !== 'inactive') c.rec.stop();
   }
 
-  const nextTempo = () => { if (P.metroOn && P.palier) { P.bpm = Math.min(260, P.bpm + P.palier); showBpm(); } };
+  // Avec une musique en mode enchaîné, chaque clip démarre pile au début d'une répétition de la boucle :
+  // tous les clips ont la même musique au même endroit.
+  const musicDrives = () => music && mbuf && P.chain && winLen() >= P.dur - 0.01;
+  let rotT = null;
+  function rotate() {
+    if (!recording) return;
+    endBeep();
+    const old = cur; startClip(); endClip(old);
+  }
 
   function beginRecording() {
-    if (P.metroOn) metro.start(ctx.currentTime + 0.05);
     seq = 0; clipN = 0;
+    let first = true;
+    onSegHook = t => {
+      if (first) { first = false; return; }
+      if (recording && musicDrives()) rotT = setTimeout(rotate, Math.max(0, (t - ctx.currentTime) * 1000));
+    };
+    startAudio(ctx.currentTime + 0.05);
     startClip();
     recording = true; setRecUi(true);
     timerId = setInterval(tick, 100);
@@ -243,9 +448,9 @@ export async function recorder() {
     const s = (performance.now() - cur.startMs) / 1000;
     $('#timer').textContent = seq > 1 ? `${fmt(s)} · clip ${seq}` : fmt(s);
     if (!cur.thumb && s >= 1.2) cur.thumb = grabThumb();
-    if (s >= P.dur) {
+    if (s >= P.dur && !musicDrives()) {
       endBeep();
-      if (P.chain) { const old = cur; nextTempo(); startClip(); endClip(old); }
+      if (P.chain) { const old = cur; startClip(); endClip(old); }
       else stopRecording();
     }
   }
@@ -262,11 +467,10 @@ export async function recorder() {
 
   function stopRecording() {
     if (!recording) return;
-    recording = false; clearInterval(timerId);
-    metro.stop();
+    recording = false; clearInterval(timerId); clearTimeout(rotT); onSegHook = null;
+    stopAudio();
     if (performance.now() - cur.startMs < P.dur * 1000 - 150) endBeep(); // arrêt à la main
     endClip(cur);
-    nextTempo();
     setRecUi(false);
     $('#timer').textContent = '0:00';
   }
@@ -304,7 +508,8 @@ export async function recorder() {
 
   onLeave(() => {
     countTimers.forEach(clearTimeout); clearInterval(timerId);
-    try { metro.stop(); } catch { /* ignoré */ }
+    try { metro.stop(); loop.stop(); } catch { /* ignoré */ }
+    clearTimeout(rotT); clearTimeout(saveT); if (music) updateMusic(music);
     // Si on quitte en plein enregistrement, le clip déjà filmé est quand même gardé.
     if (recording) { recording = false; try { endClip(cur); } catch { /* ignoré */ } }
     [camStream, micStream].forEach(s => s && s.getTracks().forEach(t => t.stop()));

@@ -27,10 +27,12 @@ export class Metronome {
     if (recording && this.recDest) this.out.connect(this.recDest);
   }
 
-  start(atTime) {
+  // n0 : numéro du premier temps dans la mesure (0 = accent), utile pour se caler sur une musique.
+  start(atTime, n0 = 0) {
     if (this.running) return;
     this.running = true;
-    this._n = 0;
+    this._n = n0;
+    this._jump = null;
     this._next = Math.max(atTime ?? 0, this.ctx.currentTime + 0.05);
     this._timer = setInterval(() => this._schedule(), 25);
     this._schedule();
@@ -51,8 +53,16 @@ export class Metronome {
     return Math.max(0, (t - this.ctx.currentTime) * 1000);
   }
 
+  // Recalage programmé : à partir de l'instant `atTime`, la grille repart de là (numéro n0).
+  // Un temps de l'ancienne grille trop proche du recalage est sauté, pour éviter un double clic.
+  resync(atTime, n0 = 0) {
+    if (!this.running) return this.start(atTime, n0);
+    this._jump = { t: atTime, n: n0 };
+  }
+
   stop() {
     this.running = false;
+    this._jump = null;
     clearInterval(this._timer);
     cancelAnimationFrame(this._raf);
     this._queue = [];
@@ -60,7 +70,11 @@ export class Metronome {
 
   _schedule() {
     const ahead = this.ctx.currentTime + 0.12;
-    while (this._next < ahead) {
+    while (this._next < ahead || (this._jump && this._jump.t < ahead)) {
+      if (this._jump && this._next > this._jump.t - 0.08) {
+        this._next = this._jump.t; this._n = this._jump.n; this._jump = null;
+      }
+      if (this._next >= ahead) break;
       const accent = this.beats > 1 && this._n % this.beats === 0;
       this._click(this._next, accent);
       this._queue.push({ t: this._next, n: this._n, accent });
