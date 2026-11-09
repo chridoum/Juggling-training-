@@ -10,7 +10,11 @@ const fmt = t => {
 const SPEEDS = [0.1, 0.25, 0.5, 1, 2];
 
 // onCut({ start, end, name }) : crée un vrai clip à partir d'un passage (renvoie une promesse).
-export function mountPlayer(root, { url, duration = 0, extraits = [], onChange = () => {}, onCut = null }) {
+// range { start, end } : le lecteur ne montre que ce passage de la vidéo (segment). Tous les temps affichés,
+// repères A/B et extraits sont alors comptés depuis le début du passage.
+export function mountPlayer(root, { url, duration = 0, extraits = [], onChange = () => {}, onCut = null, range = null }) {
+  const o = range ? range.start : 0;            // décalage dans le fichier
+  const L = range ? range.end - range.start : 0; // longueur du passage
   let list = extraits.map(e => ({ ...e }));
   let cutting = false, past = [], future = [];
   let A = null, B = null, loop = true, speed = 1, fd = 1 / 30, raf = 0, dragging = false, dead = false;
@@ -41,14 +45,16 @@ export function mountPlayer(root, { url, duration = 0, extraits = [], onChange =
 
   const $ = s => root.querySelector(s);
   const v = $('#pv'), seek = $('#seek');
-  const dur = () => (isFinite(v.duration) && v.duration > 0 ? v.duration : duration);
+  const dur = () => (range ? L : (isFinite(v.duration) && v.duration > 0 ? v.duration : duration));
+  const now = () => Math.max(0, v.currentTime - o);
+  const goto = t => { v.currentTime = o + Math.min(Math.max(0, t), dur() || t); };
 
   // Durée inconnue (WebM) : on force le calcul pour que la barre fonctionne.
   v.addEventListener('loadedmetadata', () => {
     if (v.duration === Infinity) {
       v.currentTime = 1e101;
-      v.addEventListener('timeupdate', function fix() { v.removeEventListener('timeupdate', fix); v.currentTime = 0; });
-    }
+      v.addEventListener('timeupdate', function fix() { v.removeEventListener('timeupdate', fix); v.currentTime = o; });
+    } else if (o) v.currentTime = o;
     $('#dur').textContent = ` / ${fmt(dur())}`; seek.max = dur();
   });
   v.addEventListener('durationchange', () => { $('#dur').textContent = ` / ${fmt(dur())}`; seek.max = dur(); });
@@ -67,8 +73,8 @@ export function mountPlayer(root, { url, duration = 0, extraits = [], onChange =
 
   const paint = () => {
     const d = dur() || 1;
-    $('#cur').textContent = fmt(v.currentTime);
-    if (!dragging) seek.value = v.currentTime;
+    $('#cur').textContent = fmt(now());
+    if (!dragging) seek.value = now();
     $('#play').textContent = v.paused ? '▶' : '⏸';
     const seg = $('#seg');
     seg.hidden = A === null;
@@ -86,25 +92,32 @@ export function mountPlayer(root, { url, duration = 0, extraits = [], onChange =
 
   const tick = () => {
     if (dead) return;
-    if (loop && A !== null && B !== null && B > A && !v.paused && v.currentTime >= B) v.currentTime = A;
+    if (loop && A !== null && B !== null && B > A && !v.paused && now() >= B) goto(A);
+    else if (range && !v.paused && now() >= L) { v.pause(); goto(L); }
     paint();
     raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
 
-  const toggle = () => { if (v.paused) { if (loop && B !== null && v.currentTime >= B) v.currentTime = A ?? 0; v.play(); } else v.pause(); };
+  const toggle = () => {
+    if (v.paused) {
+      if (loop && B !== null && now() >= B) goto(A ?? 0);
+      else if (range && now() >= L - 0.05) goto(0);
+      v.play();
+    } else v.pause();
+  };
   $('#play').onclick = toggle;
   v.onclick = toggle;
   v.onended = paint;
 
-  seek.oninput = () => { dragging = true; v.currentTime = +seek.value; };
+  seek.oninput = () => { dragging = true; goto(+seek.value); };
   seek.onchange = () => { dragging = false; };
 
   // Image par image (appui maintenu = défilement)
   const step = dir => {
     v.pause();
     const t = (Math.round(v.currentTime / fd) + dir) * fd + fd * 0.3;
-    v.currentTime = Math.min(Math.max(0, t), dur());
+    v.currentTime = Math.min(Math.max(o, t), o + dur());
   };
   const hold = (btn, dir) => {
     let t1 = 0, t2 = 0;
@@ -128,12 +141,12 @@ export function mountPlayer(root, { url, duration = 0, extraits = [], onChange =
   $('#undo').onclick = () => { if (!past.length) return; future.push([A, B]); restore(past.pop()); paint(); };
   $('#redo').onclick = () => { if (!future.length) return; past.push([A, B]); restore(future.pop()); paint(); };
 
-  $('#setA').onclick = () => { remember(); A = v.currentTime; if (B !== null && B <= A) B = null; paint(); };
-  $('#setB').onclick = () => { if (!(v.currentTime > (A ?? 0))) return; remember(); if (A === null) A = 0; B = v.currentTime; paint(); };
+  $('#setA').onclick = () => { remember(); A = now(); if (B !== null && B <= A) B = null; paint(); };
+  $('#setB').onclick = () => { if (!(now() > (A ?? 0))) return; remember(); if (A === null) A = 0; B = now(); paint(); };
   $('#loop').onclick = () => { loop = !loop; paint(); };
   $('#clr').onclick = () => { if (A === null && B === null) return; remember(); A = B = null; paint(); };
-  $('#goA').onclick = () => { if (A !== null) { v.currentTime = A; v.pause(); } };
-  $('#goB').onclick = () => { if (B !== null) { v.currentTime = B; v.pause(); } };
+  $('#goA').onclick = () => { if (A !== null) { goto(A); v.pause(); } };
+  $('#goB').onclick = () => { if (B !== null) { goto(B); v.pause(); } };
 
   const renderList = () => {
     $('#exWrap').hidden = !list.length;
@@ -149,7 +162,7 @@ export function mountPlayer(root, { url, duration = 0, extraits = [], onChange =
       : '';
     root.querySelectorAll('.ex-row').forEach(r => {
       const e = list.find(x => x.id === r.dataset.id);
-      r.querySelector('.ex-play').onclick = () => { A = e.start; B = e.end; loop = true; v.currentTime = A; v.play(); paint(); };
+      r.querySelector('.ex-play').onclick = () => { A = e.start; B = e.end; loop = true; goto(A); v.play(); paint(); };
       const cb = r.querySelector('.ex-cut');
       if (cb) cb.onclick = () => runCut(e.start, e.end, e.name);
       r.querySelector('.ex-ren').onclick = async () => { const n = await askName(e.name, 'Renommer l\'extrait'); if (n) { e.name = n; onChange(list); renderList(); } };

@@ -156,10 +156,44 @@ export async function purgeDeleted() {
   for (const c of await db.all('clips')) if (c.deleted) await deleteClip(c.id);
 }
 
+// Un segment n'a pas de fichier à lui : il lit un passage de la vidéo d'un autre clip (`source`).
+// Tant que des segments en dépendent, la vidéo d'origine est donc conservée (sa fiche reste cachée).
 export async function deleteClip(id) {
-  await media.deleteVideo(id);
+  const all = await db.all('clips');
+  if (all.some(x => x.source === id)) return;
+  const c = all.find(x => x.id === id);
+  if (!c || !c.source) await media.deleteVideo(id);
   await db.del('clips', id);
+  if (c && c.source) {
+    const src = all.find(x => x.id === c.source);
+    if (src && src.deleted) await deleteClip(src.id);
+  }
 }
+
+// Fiches à sauvegarder : les clips visibles, plus les vidéos cachées dont un segment visible dépend encore.
+async function keptClips() {
+  const all = await db.all('clips');
+  const live = all.filter(c => !c.deleted);
+  const needed = new Set(live.map(c => c.source).filter(Boolean));
+  return [...live, ...all.filter(c => c.deleted && needed.has(c.id))];
+}
+
+// Crée un segment d'un clip ou d'une référence : même vidéo, seul le passage start → end (en secondes
+// du clip d'origine) est lu. Aucune vidéo n'est retraitée, donc aucune perte de qualité.
+export async function addSegment(src, { start, end, name = '', thumb = null, asRef = false }) {
+  const base = src.start || 0;
+  const rec = {
+    id: db.uid(), source: src.source || src.id, start: base + start, end: base + end,
+    name: name.trim(), duration: Math.round((end - start) * 10) / 10, thumb: thumb || src.thumb || null,
+    mime: src.mime, size: 0, bpm: src.bpm || null, metro: null, extraits: [],
+  };
+  if (asRef) Object.assign(rec, { ref: true, kind: 'video', url: null, agresId: src.agresId || null, sorted: true, folderId: null });
+  else Object.assign(rec, { sorted: false, agresId: null, folderId: null });
+  return db.put('clips', rec);
+}
+
+// Vidéo à lire pour un clip (le fichier de sa source si c'est un segment).
+export const loadClipVideo = c => media.loadVideo(c.source || c.id, c.mime);
 
 // Ancien modèle (clips rattachés à des figures) → nouveau : chaque figure qui avait des clips
 // devient un dossier de son agrès (sous sa catégorie), les autres clips restent « à trier ».
@@ -192,7 +226,15 @@ export async function migrate() {
 // jamais dans « À trier » ni dans le journal. Elle est simplement rattachée à un agrès (ou à aucun).
 export async function allRefs() {
   return (await db.all('clips')).filter(c => c.ref && !c.deleted)
-    .sort((a, b) => cmp(a.name || '', b.name || '') || b.createdAt - a.createdAt);
+    .sort((a, b) => ((a.order ?? 1e9) - (b.order ?? 1e9)) || cmp(a.name || '', b.name || '') || b.createdAt - a.createdAt);
+}
+
+// Ordre choisi à la main dans une liste de références (ids dans l'ordre voulu).
+export async function reorderRefs(ids) {
+  for (const [i, id] of ids.entries()) {
+    const r = await db.get('clips', id);
+    if (r) { r.order = i; await db.put('clips', r); }
+  }
 }
 
 export async function addVideoRef({ blob, mime, duration, thumb, name, agresId = null }) {
@@ -223,7 +265,7 @@ export async function updateRef(ref, patch) {
 export async function exportData() {
   return {
     app: 'carnet-de-jongle', version: 2, exportedAt: new Date().toISOString(),
-    agres: await db.all('agres'), figures: await db.all('figures'), clips: (await db.all('clips')).filter(c => !c.deleted),
+    agres: await db.all('agres'), figures: await db.all('figures'), clips: await keptClips(),
   };
 }
 
@@ -240,13 +282,13 @@ export async function importData(data) {
 const PART_BYTES = 250 * 1024 * 1024;
 
 export async function videoStats() {
-  const clips = (await db.all('clips')).filter(c => !c.deleted);
+  const clips = (await keptClips()).filter(c => !c.source);
   return { n: clips.length, bytes: clips.reduce((a, c) => a + (c.size || 0), 0) };
 }
 
 // Découpe en archives numérotées ; renvoie [{ name, blob, count }]
 export async function exportVideos(onProgress = () => {}) {
-  const clips = (await db.all('clips')).filter(c => !c.deleted).sort((a, b) => a.createdAt - b.createdAt);
+  const clips = (await keptClips()).filter(c => !c.source).sort((a, b) => a.createdAt - b.createdAt);
   const day = new Date().toISOString().slice(0, 10);
   const parts = [];
   let cur = [], curBytes = 0, done = 0;

@@ -1,14 +1,13 @@
 // À trier, Journal (agrès → dossiers → clips) et fiche d'un clip.
 import * as db from '../db.js';
-import * as media from '../media.js';
 import { CATALOG } from '../catalog.js';
 import {
   listAgres, reorderAgres, moveFolder, createAgres, renameAgres, deleteAgres, children, pathOf, subtree, addFolder, renameFolder, deleteFolder,
-  allClips, unsortedClips, addClip, clipsAt, placeClip, unplaceClip, renameClip, deleteClip, trashClip, restoreClip, purgeIfDeleted,
+  allClips, unsortedClips, addSegment, loadClipVideo, clipsAt, placeClip, unplaceClip, renameClip, deleteClip, trashClip, restoreClip, purgeIfDeleted,
 } from '../data.js';
 import { setView, onLeave, esc, ICON, toast, confirmBox, askText, actionSheet, fmtBytes, notFound, clipLabel } from '../ui.js';
 import { mountPlayer } from '../player.js';
-import { cutClip } from '../clipcut.js';
+import { frameThumb } from '../clipcut.js';
 import { pickClip } from './compare.js';
 import { enableDrag } from '../drag.js';
 import { record, undo, redo, canUndo, canRedo } from '../history.js';
@@ -246,7 +245,7 @@ async function placeLabel(c) {
 export async function clipView(id) {
   const c = await db.get('clips', id);
   if (!c || c.deleted) return notFound();
-  const file = await media.loadVideo(id, c.mime);
+  const file = await loadClipVideo(c);
   const url = file ? URL.createObjectURL(file) : null;
   const place = await placeLabel(c);
   const ext = (c.mime || '').includes('mp4') ? 'mp4' : 'webm';
@@ -263,7 +262,7 @@ export async function clipView(id) {
 
     <div class="clip-actions">
       ${url ? '<button class="btn" id="cmp">Comparer avec un autre clip</button>' : ''}
-      ${url ? `<a class="btn" href="${url}" download="${esc(fname)}.${ext}">Enregistrer sur le téléphone</a>` : ''}
+      ${url ? `<a class="btn" href="${url}" download="${esc(fname)}.${ext}">${c.source ? 'Enregistrer la vidéo d\'origine (entière)' : 'Enregistrer sur le téléphone'}</a>` : ''}
       ${c.sorted ? '<button class="btn" id="unsort">Remettre dans « À trier »</button>' : ''}
       <button class="btn danger" id="del">Supprimer</button>
     </div>`;
@@ -274,12 +273,13 @@ export async function clipView(id) {
   if (url) {
     const player = mountPlayer(v.querySelector('#player'), {
       url, duration: c.duration, extraits: c.extraits || [],
+      range: c.source ? { start: c.start || 0, end: c.end } : null,
       onChange: async list => { c.extraits = list; await db.put('clips', c); },
-      // Un passage devient un vrai clip, qu'on peut ranger tout de suite.
-      onCut: async ({ start, end, onProgress }) => {
-        const r = await cutClip(url, start, end, onProgress);
-        const nc = await addClip({ blob: r.blob, duration: r.duration, bpm: c.bpm, thumb: r.thumb, mime: r.mime });
-        nc.name = `${c.name || clipLabel(c)} · extrait`; await db.put('clips', nc);
+      // Un passage devient un nouveau clip (même vidéo, aucun retraitement), qu'on peut ranger tout de suite.
+      onCut: async ({ start, end }) => {
+        if (end - start < 0.2) { toast('Passage trop court'); return; }
+        const thumb = await frameThumb(url, (c.start || 0) + start + 0.1);
+        const nc = await addSegment(c, { start, end, name: `${c.name || clipLabel(c)} · extrait`, thumb });
         const chosen = await pickPlace(nc, 'Clip créé. Où le ranger ?');
         if (chosen) { await placeRecorded(nc, chosen); undoToast(`Clip rangé dans ${await placeLabel(nc)}`); }
         else toast('Clip créé, il t\'attend dans « À trier »', { ms: 3000 });

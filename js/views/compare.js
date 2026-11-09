@@ -1,8 +1,7 @@
 // Comparaison de deux clips : lecture synchronisée, vitesse et image par image communes,
 // avec un repère par clip pour caler le départ du geste.
 import * as db from '../db.js';
-import * as media from '../media.js';
-import { allClips, allRefs } from '../data.js';
+import { allClips, allRefs, loadClipVideo } from '../data.js';
 import { setView, onLeave, esc, toast, notFound, clipLabel } from '../ui.js';
 
 const fmt = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(2).padStart(5, '0')}`; };
@@ -30,7 +29,7 @@ export async function pickClip(excludeId) {
 export async function compare(idA, idB) {
   const [ca, cb] = await Promise.all([db.get('clips', idA), db.get('clips', idB)]);
   if (!ca || !cb) return notFound();
-  const [fileA, fileB] = await Promise.all([media.loadVideo(idA, ca.mime), media.loadVideo(idB, cb.mime)]);
+  const [fileA, fileB] = await Promise.all([loadClipVideo(ca), loadClipVideo(cb)]);
   if (!fileA || !fileB) return notFound();
   const urls = [URL.createObjectURL(fileA), URL.createObjectURL(fileB)];
 
@@ -62,14 +61,20 @@ export async function compare(idA, idB) {
   const v = setView({ title: 'Comparer', back: ca.ref ? `#/ressource/${idA}` : `#/clip/${idA}`, tab: ca.ref ? 'resources' : 'journal', body });
   const vids = [...v.querySelectorAll('video')];
   const marks = [0, 0];
+  // Un segment ne lit qu'un passage de sa vidéo : off = début dans le fichier, len = longueur (null = tout).
+  const off = [ca.start || 0, cb.start || 0];
+  const len = [ca.end != null ? ca.end - (ca.start || 0) : null, cb.end != null ? cb.end - (cb.start || 0) : null];
+  const L = i => len[i] ?? (isFinite(vids[i].duration) ? vids[i].duration : 0);
+  const at = i => Math.max(0, vids[i].currentTime - off[i]);
+  const goto = (i, t) => { vids[i].currentTime = off[i] + Math.min(Math.max(0, t), L(i) || t); };
   let fd = 1 / 30, raf = 0, dead = false;
-  vids.forEach(x => { x.playbackRate = 1; });
+  vids.forEach((x, i) => { x.playbackRate = 1; if (off[i]) x.addEventListener('loadedmetadata', () => { x.currentTime = off[i]; }); });
 
-  const rewind = () => vids.forEach((x, i) => { x.currentTime = marks[i]; });
+  const rewind = () => vids.forEach((x, i) => goto(i, marks[i]));
   const playing = () => vids.some(x => !x.paused);
   const toggle = () => {
     if (playing()) { vids.forEach(x => x.pause()); return; }
-    vids.forEach((x, i) => { if (x.ended || x.currentTime >= x.duration - 0.05) x.currentTime = marks[i]; });
+    vids.forEach((x, i) => { if (x.ended || at(i) >= L(i) - 0.05) goto(i, marks[i]); });
     vids.forEach(x => x.play());
   };
   v.querySelector('#play').onclick = toggle;
@@ -78,20 +83,22 @@ export async function compare(idA, idB) {
 
   v.querySelectorAll('.cmp-pane').forEach((pn, i) => {
     const seek = pn.querySelector('.cmp-seek');
-    const setMax = () => { if (isFinite(vids[i].duration)) seek.max = vids[i].duration; };
+    const setMax = () => { if (L(i)) seek.max = L(i); };
+    setMax();
     vids[i].addEventListener('loadedmetadata', setMax); vids[i].addEventListener('durationchange', setMax);
-    seek.oninput = () => { vids[i].pause(); vids[i].currentTime = +seek.value; };
+    seek.oninput = () => { vids[i].pause(); goto(i, +seek.value); };
     pn.querySelector('.cmp-mark').onclick = e => {
-      marks[i] = vids[i].currentTime;
+      marks[i] = at(i);
       e.currentTarget.querySelector('span').textContent = fmt(marks[i]);
       toast(`Repère posé à ${fmt(marks[i])}`);
     };
   });
 
   // Image par image sur les deux clips à la fois
-  const step = dir => vids.forEach(x => {
+  const step = dir => vids.forEach((x, i) => {
     x.pause();
-    x.currentTime = Math.max(0, (Math.round(x.currentTime / fd) + dir) * fd + fd * 0.3);
+    const t = (Math.round(x.currentTime / fd) + dir) * fd + fd * 0.3;
+    x.currentTime = Math.min(Math.max(off[i], t), off[i] + (L(i) || t));
   });
   const hold = (btn, dir) => {
     let t1 = 0, t2 = 0;
@@ -121,8 +128,9 @@ export async function compare(idA, idB) {
   const tick = () => {
     if (dead) return;
     v.querySelectorAll('.cmp-pane').forEach((pn, i) => {
-      pn.querySelector('.cmp-time').textContent = fmt(vids[i].currentTime);
-      pn.querySelector('.cmp-seek').value = vids[i].currentTime;
+      if (len[i] != null && !vids[i].paused && at(i) >= len[i]) { vids[i].pause(); goto(i, len[i]); }
+      pn.querySelector('.cmp-time').textContent = fmt(at(i));
+      pn.querySelector('.cmp-seek').value = at(i);
     });
     v.querySelector('#play').textContent = playing() ? '⏸' : '▶';
     raf = requestAnimationFrame(tick);
