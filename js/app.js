@@ -6,7 +6,7 @@ import { notFound } from './ui.js';
 import { recorder } from './views/train.js';
 import { trier, journalHome, journalFolder, clipView } from './views/journal.js';
 import { compare } from './views/compare.js';
-import { resources, refView, receiveShare } from './views/resources.js';
+import { resources, resourcesAgres, refView, receiveShare } from './views/resources.js';
 import { settings } from './views/settings.js';
 
 // Thème appliqué avant tout rendu, pour éviter un flash clair
@@ -21,6 +21,7 @@ const routes = [
   [/^#\/clip\/([^/]+)$/, m => clipView(m[1])],
   [/^#\/comparer\/([^/]+)\/([^/]+)$/, m => compare(m[1], m[2])],
   [/^#\/ressources$/, () => resources()],
+  [/^#\/ressources\/a\/([^/]+)$/, m => resourcesAgres(m[1])],
   [/^#\/ressource\/([^/]+)$/, m => refView(m[1])],
   [/^#\/partage$/, () => receiveShare()],
   [/^#\/reglages$/, () => settings()],

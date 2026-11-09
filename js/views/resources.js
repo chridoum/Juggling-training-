@@ -3,6 +3,7 @@
 import * as db from '../db.js';
 import * as media from '../media.js';
 import { listAgres, allRefs, addVideoRef, addLinkRef, updateRef } from '../data.js';
+import { cutClip } from '../clipcut.js';
 import { setView, onLeave, esc, ICON, toast, confirmBox, askText, actionSheet, fmtBytes, notFound } from '../ui.js';
 import { mountPlayer } from '../player.js';
 import { probeVideo } from '../clipcut.js';
@@ -60,10 +61,10 @@ async function pickAgres(current) {
 }
 
 // ---------- Ajout ----------
-export async function importVideoFile(file, { name } = {}) {
+export async function importVideoFile(file, { name, agresId = null } = {}) {
   const info = await probeVideo(file);
   const base = (name || file.name || 'Vidéo').replace(/\.[^.]+$/, '');
-  return addVideoRef({ blob: file, mime: file.type, duration: info.duration, thumb: info.thumb, name: base });
+  return addVideoRef({ blob: file, mime: file.type, duration: info.duration, thumb: info.thumb, name: base, agresId });
 }
 
 function askLink() {
@@ -87,48 +88,75 @@ function askLink() {
   });
 }
 
-function addSheet() {
+function addSheet(agresId = null) {
   actionSheet('Ajouter une référence', [
     { label: 'Importer une vidéo du téléphone', onClick: () => document.getElementById('refFile').click() },
     { label: 'Ajouter un lien', onClick: async () => {
       const l = await askLink();
       if (!l) return;
-      const r = await addLinkRef(l);
+      const r = await addLinkRef({ ...l, agresId });
       location.hash = `#/ressource/${r.id}`;
     } },
   ]);
 }
 
-// ---------- Liste ----------
-export async function resources() {
-  const [refs, agres] = await Promise.all([allRefs(), listAgres()]);
-  const groups = agres.map(a => ({ name: a.name, items: refs.filter(r => r.agresId === a.id) })).filter(g => g.items.length);
-  const loose = refs.filter(r => !r.agresId || !agres.some(a => a.id === r.agresId));
-  if (loose.length) groups.push({ name: 'Sans agrès', items: loose });
+// ---------- Niveau 1 : les agrès ----------
+const isLoose = (r, agres) => !r.agresId || !agres.some(a => a.id === r.agresId);
 
-  const body = `
-    <input type="file" id="refFile" accept="video/*" hidden>
-    ${refs.length ? groups.map(g => `
-      <h3 class="section-title">${esc(g.name)}</h3>
-      <div class="list">${g.items.map(refRow).join('')}</div>`).join('')
-      : `<div class="empty"><strong>Aucune référence</strong>Importe les vidéos qui te servent de modèle : tu pourras les analyser au ralenti et les comparer à tes propres clips. Les liens, eux, s'ouvrent dans le navigateur.</div>`}`;
-
-  const v = setView({
-    title: 'Ressources', tab: 'resources', body,
-    actions: [...histActions(), { label: 'Réglages', icon: ICON.gear, onClick: () => { location.hash = '#/reglages'; } }],
-    fab: { label: 'Ajouter', icon: ICON.plus, onClick: addSheet },
-  });
-  hideBrokenThumbs(v);
+function bindImport(v, agresId) {
   v.querySelector('#refFile').onchange = async e => {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
     toast('Import en cours…');
     try {
-      const r = await importVideoFile(file);
+      const r = await importVideoFile(file, { agresId });
       location.hash = `#/ressource/${r.id}`;
     } catch (err) { console.error(err); toast('Import impossible : ' + (err.message || err), { ms: 4000 }); }
   };
+}
+
+export async function resources() {
+  const [refs, agres] = await Promise.all([allRefs(), listAgres()]);
+  const loose = refs.filter(r => isLoose(r, agres)).length;
+  const rows = [
+    ...agres.map(a => ({ href: `#/ressources/a/${a.id}`, name: a.name, n: refs.filter(r => r.agresId === a.id).length })),
+    ...(loose ? [{ href: '#/ressources/a/aucun', name: 'Sans agrès', n: loose }] : []),
+  ];
+  const body = `
+    <input type="file" id="refFile" accept="video/*" hidden>
+    ${rows.length ? `<div class="list">${rows.map(r => `<a class="row" href="${r.href}">
+        <span class="row-main"><span class="row-title">${esc(r.name)}</span></span>
+        <span class="row-count">${r.n}</span>${ICON.chev}</a>`).join('')}</div>`
+      : `<div class="empty"><strong>Aucun agrès</strong>Crée un agrès dans le Journal, ou ajoute directement une référence.</div>`}
+    ${refs.length ? '' : '<p class="muted small" style="margin:18px 2px">Importe les vidéos qui te servent de modèle : tu pourras les analyser au ralenti et les comparer à tes propres clips. Les liens, eux, s\'ouvrent dans le navigateur.</p>'}`;
+
+  const v = setView({
+    title: 'Ressources', tab: 'resources', body,
+    actions: [...histActions(), { label: 'Réglages', icon: ICON.gear, onClick: () => { location.hash = '#/reglages'; } }],
+    fab: { label: 'Ajouter', icon: ICON.plus, onClick: () => addSheet() },
+  });
+  bindImport(v, null);
+}
+
+// ---------- Niveau 2 : les références d'un agrès ----------
+export async function resourcesAgres(agresId) {
+  const [refs, agres] = await Promise.all([allRefs(), listAgres()]);
+  const loose = agresId === 'aucun';
+  const a = loose ? null : agres.find(x => x.id === agresId);
+  if (!loose && !a) return notFound();
+  const mine = refs.filter(r => loose ? isLoose(r, agres) : r.agresId === agresId);
+  const body = `
+    <input type="file" id="refFile" accept="video/*" hidden>
+    ${mine.length ? `<div class="list">${mine.map(refRow).join('')}</div>`
+      : `<div class="empty"><strong>Aucune référence</strong>Importe une vidéo ou ajoute un lien pour cet agrès.</div>`}`;
+  const v = setView({
+    title: loose ? 'Sans agrès' : a.name, back: '#/ressources', tab: 'resources', body,
+    actions: histActions(),
+    fab: { label: 'Ajouter', icon: ICON.plus, onClick: () => addSheet(loose ? null : agresId) },
+  });
+  hideBrokenThumbs(v);
+  bindImport(v, loose ? null : agresId);
 }
 
 // ---------- Fiche d'une référence ----------
@@ -161,13 +189,20 @@ export async function refView(id) {
       <button class="btn danger" id="del">Supprimer</button>
     </div>`;
 
-  const v = setView({ title: 'Référence', back: '#/ressources', tab: 'resources', body, actions: histActions() });
+  const backTo = `#/ressources/a/${a ? a.id : 'aucun'}`;
+  const v = setView({ title: 'Référence', back: backTo, tab: 'resources', body, actions: histActions() });
   hideBrokenThumbs(v);
 
   if (url) {
     const player = mountPlayer(v.querySelector('#player'), {
       url, duration: r.duration, extraits: r.extraits || [],
       onChange: async list => { r.extraits = list; await db.put('clips', r); },
+      // Un passage devient une nouvelle référence (la vidéo d'origine reste intacte), dans le même agrès.
+      onCut: async ({ start, end, onProgress }) => {
+        const res = await cutClip(url, start, end, onProgress);
+        await addVideoRef({ blob: res.blob, mime: res.mime, duration: res.duration, thumb: res.thumb, name: `${refName(r)} · extrait`, agresId: r.agresId });
+        toast(`Segment ajouté dans ${a ? a.name : 'Sans agrès'}`, { ms: 3500 });
+      },
     });
     onLeave(() => { player.destroy(); URL.revokeObjectURL(url); });
   }
@@ -187,7 +222,7 @@ export async function refView(id) {
   v.querySelector('#del').onclick = async () => {
     if (!await confirmBox({ title: 'Supprimer cette référence ?', text: 'Tu peux annuler tant que l\'appli reste ouverte.', ok: 'Supprimer', danger: true })) return;
     await trashWithUndo(id, 'suppression d\'une référence');
-    location.hash = '#/ressources';
+    location.hash = backTo;
   };
 }
 
