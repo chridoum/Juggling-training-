@@ -206,3 +206,4 @@ body.dragging .drop-up { display: grid; }
 .pick-line { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
 .pick-line .pick { flex: 1; border-bottom: 0; }
 .pick-line .icon-btn.armed { width: auto; padding: 0 10px; border-radius: 10px; color: var(--danger); font: inherit; font-size: 14px; font-weight: 600; }
+#wave.whole { cursor: default; }

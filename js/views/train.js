@@ -38,6 +38,7 @@ export async function recorder() {
       <div class="opt"><span>Musique</span>
         <button class="music-row" id="musicBtn"><span class="row-main"><span class="row-title" id="musicName">Aucune</span><span class="row-sub" id="musicSub"></span></span>${ICON.chev}</button>
         <div id="musicBox" hidden>
+          <div class="seg"><button data-whole="0">Passage du clip</button><button data-whole="1">Morceau entier</button></div>
           <canvas id="wave" aria-label="Passage joué en boucle : fais glisser pour le choisir"></canvas>
           <div class="btn-row"><button class="btn" id="align">Caler le clic</button><button class="btn" id="half">Tempo ÷2</button><button class="btn" id="double">Tempo ×2</button></div>
           <p class="small muted" id="alignHint" hidden>Tape « Caler » sur chaque temps, en commençant sur un « 1 » (au moins 4 fois).</p>
@@ -139,7 +140,10 @@ export async function recorder() {
   // --- Musique ---
   let music = null, mbuf = null, mpk = null, onSegHook = null;
   const curBpm = () => (music && music.bpm ? music.bpm : P.bpm);
-  const winLen = () => (music ? Math.min(P.dur, music.duration) : 0);
+  // Passage choisi (durée du clip) ou morceau entier, selon l'option du morceau.
+  const passLen = () => (music ? Math.min(P.dur, music.duration) : 0);
+  const winLen = () => (music ? (music.whole ? music.duration : passLen()) : 0);
+  const loopFrom = () => (music && !music.whole ? music.loopStart : 0);
   let saveT = null;
   const saveMusic = () => { clearTimeout(saveT); saveT = setTimeout(() => music && updateMusic(music), 400); };
 
@@ -156,7 +160,7 @@ export async function recorder() {
   const setBpm = b => {
     b = Math.max(30, Math.min(260, Math.round(b * 100) / 100));
     if (music) {
-      music.bpm = b; music.loopStart = snap(music.loopStart, b, music.phase, music.duration, winLen()); saveMusic();
+      music.bpm = b; music.loopStart = snap(music.loopStart, b, music.phase, music.duration, passLen()); saveMusic();
       drawWave(); if (testing) restartAudio();
     } else P.bpm = Math.round(b);
     showBpm();
@@ -173,7 +177,7 @@ export async function recorder() {
   pick('beats', x => { P.beats = +x; metro.beats = P.beats; });
   pick('dur', x => {
     P.dur = +x;
-    if (music) { music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, winLen()); saveMusic(); drawWave(); if (testing) restartAudio(); }
+    if (music) { music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, passLen()); saveMusic(); drawWave(); if (testing) restartAudio(); }
   });
   pick('chain', x => { P.chain = x === '1'; });
   pick('casque', x => { P.casque = x === '1'; metro.setRouting({ recording: P.casque }); loop.setRouting({ recording: P.casque }); });
@@ -198,7 +202,7 @@ export async function recorder() {
   // Démarre la musique (si choisie) et le métronome calé sur ses temps, ou le métronome seul.
   function startAudio(at) {
     if (music && mbuf) {
-      const from = music.loopStart;
+      const from = loopFrom();
       loop.start(mbuf, {
         from, len: winLen(), at,
         onSegment: t => {
@@ -226,7 +230,7 @@ export async function recorder() {
     wave.width = W * dpr; wave.height = H * dpr;
     const g = wave.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
     const D = music.duration, x = t => (t / D) * W;
-    const a = music.loopStart, b = a + winLen();
+    const a = loopFrom(), b = a + winLen();
     g.fillStyle = css('--accent'); g.globalAlpha = 0.18; g.fillRect(x(a), 0, Math.max(2, x(b) - x(a)), H); g.globalAlpha = 1;
     for (let i = 0; i < W; i++) {
       const t = (i / W) * D, h = Math.max(1, mpk[Math.floor((i / W) * mpk.length)] * (H - 8));
@@ -253,7 +257,11 @@ export async function recorder() {
 
   function showMusic() {
     $('#musicName').textContent = music ? music.name : 'Aucune';
-    $('#musicSub').textContent = music ? (music.bpm ? `${fmtBpm(music.bpm)} BPM · boucle de ${Math.round(winLen())} s` : 'Tempo non trouvé : règle-le à la main') : 'Le clic seul';
+    const mmss = t => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
+    const what = music && music.whole ? `morceau entier (${mmss(music.duration)})` : `boucle de ${Math.round(winLen())} s`;
+    $('#musicSub').textContent = music ? (music.bpm ? `${fmtBpm(music.bpm)} BPM · ${what}` : `Tempo non trouvé : règle-le à la main · ${what}`) : 'Le clic seul';
+    v.querySelectorAll('[data-whole]').forEach(b => b.setAttribute('aria-pressed', String(!!(music && music.whole) === (b.dataset.whole === '1'))));
+    wave.classList.toggle('whole', !!(music && music.whole));
     $('#musicBox').hidden = !music;
     showBpm(); drawWave();
   }
@@ -316,11 +324,18 @@ export async function recorder() {
     music.loopStart = snap(t, music.bpm, music.phase, music.duration, winLen());
     drawWave();
   };
-  wave.addEventListener('pointerdown', e => { if (!music || recording) return; dragW = true; wave.setPointerCapture(e.pointerId); moveWin(e); });
+  wave.addEventListener('pointerdown', e => { if (!music || music.whole || recording) return; dragW = true; wave.setPointerCapture(e.pointerId); moveWin(e); });
   wave.addEventListener('pointermove', e => { if (dragW) moveWin(e); });
   const endWin = () => { if (!dragW) return; dragW = false; saveMusic(); showMusic(); if (testing) restartAudio(); };
   wave.addEventListener('pointerup', endWin); wave.addEventListener('pointercancel', endWin);
 
+  v.querySelectorAll('[data-whole]').forEach(b => {
+    b.onclick = () => {
+      if (!music || recording || counting) return;
+      music.whole = b.dataset.whole === '1'; saveMusic(); showMusic();
+      if (testing) restartAudio();
+    };
+  });
   $('#half').onclick = () => music && setBpm(music.bpm / 2);
   $('#double').onclick = () => music && setBpm(music.bpm * 2);
 
@@ -342,7 +357,7 @@ export async function recorder() {
         taps.forEach(p => { const a = (2 * Math.PI * (((p % Pd) + Pd) % Pd)) / Pd; sx += Math.cos(a); sy += Math.sin(a); });
         const res = ((Math.atan2(sy, sx) / (2 * Math.PI)) * Pd + Pd) % Pd;
         music.phase = Math.round((res + Math.round((taps[0] - res) / Pd) * Pd) * 1000) / 1000;
-        music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, winLen());
+        music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, passLen());
         saveMusic(); restartAudio(); drawWave();
         toast('Clic calé sur la musique');
       } else toast('Il faut au moins 4 appuis');
@@ -423,7 +438,7 @@ export async function recorder() {
 
   // Avec une musique en mode enchaîné, chaque clip démarre pile au début d'une répétition de la boucle :
   // tous les clips ont la même musique au même endroit.
-  const musicDrives = () => music && mbuf && P.chain && winLen() >= P.dur - 0.01;
+  const musicDrives = () => music && mbuf && !music.whole && P.chain && winLen() >= P.dur - 0.01;
   let rotT = null;
   function rotate() {
     if (!recording) return;
