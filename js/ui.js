@@ -1,3 +1,4 @@
+import { LOCALE, LANG } from './i18n.js';
 // Petits outils d'interface partagés par toutes les vues.
 
 const $view = () => document.getElementById('view');
@@ -127,10 +128,12 @@ export function hostOf(url) {
 }
 
 export function fmtBytes(b) {
-  if (b < 1024) return `${b} o`;
-  if (b < 1024 ** 2) return `${(b / 1024).toFixed(0)} Ko`;
-  if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} Mo`;
-  return `${(b / 1024 ** 3).toFixed(1)} Go`;
+  const [o, k, M, G] = LANG === 'fr' ? ['o', 'Ko', 'Mo', 'Go'] : ['B', 'KB', 'MB', 'GB'];
+  const n = (v, d) => v.toLocaleString(LOCALE, { minimumFractionDigits: d, maximumFractionDigits: d });
+  if (b < 1024) return `${b} ${o}`;
+  if (b < 1024 ** 2) return `${n(b / 1024, 0)} ${k}`;
+  if (b < 1024 ** 3) return `${n(b / 1024 ** 2, 1)} ${M}`;
+  return `${n(b / 1024 ** 3, 1)} ${G}`;
 }
 
 export function byName(a, b) {
@@ -146,5 +149,5 @@ export function notFound() {
 export function clipLabel(c) {
   if (c.name) return c.name;
   const d = new Date(c.createdAt);
-  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+  return `${d.toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit' })}`;
 }

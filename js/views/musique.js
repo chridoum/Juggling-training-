@@ -5,9 +5,10 @@ import {
   MusicLoop, listMusics, getMusic, importMusic, removeMusic, updateMusic, loadBuffer, peaks,
   loadPrefs, savePrefs, normalizeMusic, loopSpan, stepLen, beatLen, gridSnap, measuresText, fmtSec, playWithClick,
 } from '../music.js';
+import { LOCALE } from '../i18n.js';
 import { setView, onLeave, esc, ICON, toast } from '../ui.js';
 
-const fmtBpm = b => (Math.round(b * 10) / 10).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const fmtBpm = b => (Math.round(b * 10) / 10).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 const NOTE = '<svg viewBox="0 0 24 24" aria-hidden="true" style="color:var(--accent)"><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>';
 const PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" class="fill"/></svg>';

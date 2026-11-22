@@ -3,8 +3,9 @@
 import { Metronome, makeTapper } from '../metronome.js';
 import { MusicLoop, getMusic, loadBuffer, loadPrefs, savePrefs, normalizeMusic, loopSpan, beatLen, measuresText, fmtSec, playWithClick } from '../music.js';
 import { addClip, unsortedClips } from '../data.js';
+import { LOCALE, t } from '../i18n.js';
 import { setView, onLeave, esc, ICON, toast } from '../ui.js';
-const fmtBpm = b => (Math.round(b * 10) / 10).toLocaleString('fr-FR');
+const fmtBpm = b => (Math.round(b * 10) / 10).toLocaleString(LOCALE);
 
 const MIMES = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -62,7 +63,7 @@ export async function recorder() {
 
     <div class="rec-bottom">
       <button class="rec-side" id="settingsBtn" aria-label="Réglages"><b id="bpmShort">${P.bpm}</b><span>BPM</span></button>
-      <button class="rec-btn" id="rec" aria-label="Enregistrer"><span></span></button>
+      <button class="rec-btn" id="rec" aria-label="Lancer l'enregistrement"><span></span></button>
       <a class="rec-side" href="#/trier" aria-label="Clips à trier"><b id="inbox">${inbox}</b><span>à trier</span></a>
     </div>
   </div>`;
@@ -252,7 +253,7 @@ export async function recorder() {
   const recBtn = $('#rec');
   const setRecUi = on => {
     recBtn.classList.toggle('on', on);
-    recBtn.setAttribute('aria-label', on ? 'Arrêter' : 'Enregistrer');
+    recBtn.setAttribute('aria-label', on ? 'Arrêter' : 'Lancer l\'enregistrement');
     $('#flip').hidden = on || counting;
     $('#timer').classList.toggle('live', on);
     if (on) sheet.hidden = true;

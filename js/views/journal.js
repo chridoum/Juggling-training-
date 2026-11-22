@@ -5,6 +5,7 @@ import {
   listAgres, reorderAgres, moveFolder, createAgres, renameAgres, deleteAgres, children, pathOf, subtree, addFolder, renameFolder, deleteFolder,
   allClips, unsortedClips, addSegment, loadClipVideo, clipsAt, placeClip, unplaceClip, renameClip, deleteClip, trashClip, restoreClip, purgeIfDeleted,
 } from '../data.js';
+import { LOCALE, LANG } from '../i18n.js';
 import { setView, onLeave, esc, ICON, toast, confirmBox, askText, actionSheet, fmtBytes, notFound, clipLabel } from '../ui.js';
 import { mountPlayer } from '../player.js';
 import { frameThumb } from '../clipcut.js';
@@ -14,14 +15,14 @@ import { record, undo, redo, canUndo, canRedo } from '../history.js';
 
 const fmtDur = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
-const when = c => new Date(c.createdAt).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const when = c => new Date(c.createdAt).toLocaleString(LOCALE, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const thumb = c => c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="">` : `<span class="clip-thumb">${ICON.cam}</span>`;
 const clipSub = c => [when(c), fmtDur(c.duration || 0), c.bpm ? `${c.bpm} BPM` : ''].filter(Boolean).join(' · ');
 
 // ---------- Annuler / rétablir ----------
 export const histActions = () => [
-  { label: 'Annuler', icon: ICON.undo, disabled: !canUndo(), onClick: () => doHistory(undo, 'Annulé') },
-  { label: 'Rétablir', icon: ICON.redo, disabled: !canRedo(), onClick: () => doHistory(redo, 'Rétabli') },
+  { label: 'Annuler la dernière action', icon: ICON.undo, disabled: !canUndo(), onClick: () => doHistory(undo, 'Annulé') },
+  { label: 'Rétablir l\'action annulée', icon: ICON.redo, disabled: !canRedo(), onClick: () => doHistory(redo, 'Rétabli') },
 ];
 async function doHistory(fn, word) {
   const e = await fn();
@@ -34,7 +35,7 @@ async function applyState(id, st) {
   const c = await db.get('clips', id); if (!c) return;
   Object.assign(c, st); await db.put('clips', c);
 }
-const undoToast = msg => toast(msg, { action: 'Annuler', ms: 5000, onAction: () => doHistory(undo, 'Annulé') });
+const undoToast = msg => toast(msg, { action: LANG === 'fr' ? 'Annuler' : 'Undo', ms: 5000, onAction: () => doHistory(undo, 'Annulé') });
 
 // Supprime (de façon réversible) un clip.
 export async function trashWithUndo(id, label = 'suppression d\'un clip') {
@@ -97,7 +98,7 @@ export async function journalHome() {
   const count = a => clips.filter(c => c.sorted && c.agresId === a.id).length;
   const body = `
     ${inbox ? `<div class="list"><a class="row inbox-row" href="#/trier"><span class="row-main"><span class="row-title">À trier</span><span class="row-sub">${plural(inbox, 'clip')}</span></span>${ICON.chev}</a></div>` : ''}
-    ${agres.length ? `<h3 class="section-title">Agrès</h3>
+    ${agres.length ? `<h3 class="section-title" data-en="Props">Agrès</h3>
       ${agres.length > 1 ? '<p class="muted small hint">Appui long sur un agrès pour changer l\'ordre.</p>' : ''}
       <div class="list" id="agList">${agres.map(a => `<a class="row drag-row" draggable="false" data-id="${a.id}" href="#/journal/a/${a.id}">
         <span class="row-main"><span class="row-title">${esc(a.name)}</span></span>

@@ -1,6 +1,7 @@
 // Musique d'entraînement : bibliothèque de morceaux, analyse du tempo, lecture d'un passage en boucle.
 import * as db from './db.js';
 import * as media from './media.js';
+import { LOCALE } from './i18n.js';
 
 // ---------- Bibliothèque (fiches dans les méta-données, fichiers audio à côté des vidéos) ----------
 const KEY = 'musics';
@@ -268,7 +269,7 @@ export function measuresText(len, m, beats) {
   const tps = r ? `${r} temps` : '';
   return [mes, tps].filter(Boolean).join(' ') || '—';
 }
-export const fmtSec = s => `${(Math.round(s * 10) / 10).toLocaleString('fr-FR', { minimumFractionDigits: 1 })} s`;
+export const fmtSec = s => `${(Math.round(s * 10) / 10).toLocaleString(LOCALE, { minimumFractionDigits: 1 })} s`;
 
 // Lance la musique (passage du mode choisi) avec le métronome calé sur ses temps.
 export function playWithClick({ loop, metro, buf, m, beats, at, onSegment }) {

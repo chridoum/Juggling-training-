@@ -3,6 +3,7 @@ import * as db from '../db.js';
 import { exportData, importData, exportVideos, importVideos, videoStats } from '../data.js';
 import { setView, toast, fmtBytes } from '../ui.js';
 import { applyTheme } from '../theme.js';
+import { langChoice, setLangChoice } from '../i18n.js';
 
 // ---------- Réglages ----------
 export async function settings() {
@@ -17,6 +18,15 @@ export async function settings() {
       <div class="seg" style="min-width:180px" id="theme">
         <button data-t="dark" aria-pressed="${theme === 'dark'}">Sombre</button>
         <button data-t="light" aria-pressed="${theme === 'light'}">Clair</button>
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <span>Langue</span>
+      <div class="seg" style="min-width:210px" id="lang" data-no-i18n>
+        <button data-l="auto" aria-pressed="${langChoice() === 'auto'}">Auto</button>
+        <button data-l="fr" aria-pressed="${langChoice() === 'fr'}">Français</button>
+        <button data-l="en" aria-pressed="${langChoice() === 'en'}">English</button>
       </div>
     </div>
 
@@ -55,6 +65,9 @@ export async function settings() {
 
   const v = setView({ title: 'Réglages', back: '#/journal', tab: 'journal', body });
 
+  v.querySelectorAll('#lang button').forEach(b => {
+    b.onclick = () => { if (b.dataset.l === langChoice()) return; setLangChoice(b.dataset.l); location.reload(); };
+  });
   v.querySelectorAll('#theme button').forEach(b => {
     b.onclick = async () => {
       await db.setMeta('theme', b.dataset.t);

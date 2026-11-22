@@ -2,6 +2,7 @@
 // Un agrès garde ses dossiers dans `categories` : [{ id, name, parentId }] (parentId null = à la racine).
 // Un clip est « à trier » tant que `sorted` est faux ; sinon il est rangé dans (agresId, folderId).
 import * as db from './db.js';
+import { t } from './i18n.js';
 import { CATALOG, CATEGORIES } from './catalog.js';
 import * as media from './media.js';
 import { buildZip, readZip } from './zip.js';
@@ -28,8 +29,8 @@ export async function createAgres({ name, catalogKey = null }) {
     if (existing) return existing;
   }
   return db.put('agres', {
-    id: db.uid(), name: def ? def.name : name.trim(), catalogKey: def ? def.key : null,
-    categories: def ? (CATEGORIES[def.key] || []).map(n => ({ id: db.uid(), name: n, parentId: null })) : [],
+    id: db.uid(), name: def ? t(def.name) : name.trim(), catalogKey: def ? def.key : null,
+    categories: def ? (CATEGORIES[def.key] || []).map(n => ({ id: db.uid(), name: t(n), parentId: null })) : [],
   });
 }
 

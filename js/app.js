@@ -1,4 +1,5 @@
 // Point d'entrée : routeur par ancre (#/...) et démarrage.
+import { startTranslation } from './i18n.js';
 import * as db from './db.js';
 import { applyTheme } from './theme.js';
 import { migrate, purgeDeleted } from './data.js';
@@ -49,6 +50,7 @@ function showError(err) {
 window.addEventListener('hashchange', route);
 
 (async () => {
+  startTranslation();
   const theme = await db.getMeta('theme');
   if (theme) applyTheme(theme);
   try { await purgeDeleted(); } catch (err) { console.warn(err); }

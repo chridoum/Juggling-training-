@@ -37,7 +37,7 @@ export function mountPlayer(root, { url, duration = 0, extraits = [], onChange =
     </div>
     <div class="pl-ab">
       <button class="btn" id="goA" disabled>Aller à A</button><button class="btn" id="goB" disabled>Aller à B</button>
-      <button class="btn" id="undo" aria-label="Annuler" disabled>↶</button><button class="btn" id="redo" aria-label="Rétablir" disabled>↷</button>
+      <button class="btn" id="undo" aria-label="Annuler la dernière action" disabled>↶</button><button class="btn" id="redo" aria-label="Rétablir l'action annulée" disabled>↷</button>
     </div>
     <button class="btn block" id="save" disabled>${ICON.plus} Créer un clip de A à B</button>
     <div id="exWrap" hidden><h3 class="section-title">Anciens extraits</h3><div class="list" id="exs"></div></div>
