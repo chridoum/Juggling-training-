@@ -11,15 +11,18 @@ let clipId = null; // le clip filmé pendant la visite
 
 const STEPS = [
   { title: 'Bienvenue dans Juglog', text: 'On va faire un tour pratique : régler la caméra, filmer un clip, l\'analyser et le ranger. Suis simplement la zone éclairée.', next: 'Commencer' },
-  { target: '#settingsBtn', title: 'Les réglages', text: 'Commence par ouvrir les réglages de l\'enregistrement.',
+  { route: '#/entrainement', target: '#settingsBtn', title: 'Les réglages', text: 'Commence par ouvrir les réglages de l\'enregistrement.',
     done: () => visible('#sheet:not([hidden])') },
-  { target: '#sheet', title: 'Régler avant de filmer', text: 'Le tempo du clic, la durée de chaque clip, l\'enchaînement (les clips se suivent jusqu\'à l\'arrêt), l\'écoute (casque ou haut-parleur) et la Musique, pour filmer sur un morceau en boucle. Fais défiler les réglages pour tout voir.', next: 'Suivant',
+  { route: '#/entrainement', target: '#sheet', title: 'Régler avant de filmer', text: 'Le tempo du clic, la durée de chaque clip, l\'enchaînement (les clips se suivent jusqu\'à l\'arrêt), l\'écoute (casque ou haut-parleur) et la Musique, pour filmer sur un morceau en boucle. Fais défiler les réglages pour tout voir.', next: 'Suivant',
     // La feuille remonte en haut, plus compacte, pour laisser la place à la fiche.
-    enter: () => document.body.classList.add('tour-sheet'),
+    enter: () => {
+      document.body.classList.add('tour-sheet');
+      const sh = document.getElementById('sheet'); if (sh) sh.hidden = false;
+    },
     leave: () => { document.body.classList.remove('tour-sheet'); const sh = document.getElementById('sheet'); if (sh) sh.hidden = true; } },
-  { target: '#rec', title: 'Filmer', text: 'Appuie sur le bouton rouge. Un décompte de 3 secondes, puis l\'enregistrement démarre.',
+  { route: '#/entrainement', target: '#rec', title: 'Filmer', text: 'Appuie sur le bouton rouge. Un décompte de 3 secondes, puis l\'enregistrement démarre.',
     done: () => !!document.querySelector('#rec.on') },
-  { target: '#rec', title: 'Arrêter', text: 'Filme quelques secondes (fais un mouvement devant la caméra), puis appuie à nouveau pour arrêter.',
+  { route: '#/entrainement', target: '#rec', title: 'Arrêter', text: 'Filme quelques secondes (fais un mouvement devant la caméra), puis appuie à nouveau pour arrêter.',
     done: () => hash() === '#/trier' },
   { target: '.row-wrap a.row', title: 'Tes clips à trier', text: 'Tes clips arrivent ici. La corbeille supprime un raté sans l\'ouvrir. Ouvre ton clip.',
     done: () => { const m = hash().match(/^#\/clip\/(.+)$/); if (m) clipId = m[1]; return !!m; } },
@@ -56,7 +59,7 @@ export function replayTour() {
 
 export function startTour() {
   if (el) el.remove();
-  let i = 0, since = Date.now(), checking = false, timer = null, raf = null, scrolled = false;
+  let i = 0, since = Date.now(), checking = false, timer = null, raf = null, scrolled = false, returning = false;
   clipId = null;
   el = document.createElement('div');
   el.className = 'tour';
@@ -132,15 +135,21 @@ export function startTour() {
   const tick = async () => {
     if (!el || checking) return;
     const s = STEPS[i];
-    if (!s.done) return;
+    if (!s.done && !s.route) return;
     checking = true;
     let ok = false;
-    try { ok = await s.done(); } catch { ok = false; }
+    try { ok = s.done ? await s.done() : false; } catch { ok = false; }
     checking = false;
     if (!el) return;
     if (ok) { advance(); return; }
+    // On a quitté la page de l'étape (lien touché par mégarde…) : on y revient, et l'étape reprend.
+    if (s.route && hash() !== s.route && !returning) {
+      returning = true;
+      location.hash = s.route;
+      setTimeout(() => { returning = false; if (el && s.enter) try { s.enter(); } catch { /* ignoré */ } }, 900);
+    }
     // Rien ne bouge depuis un moment (caméra refusée, clip trop court…) : on propose de sauter l'étape.
-    if (Date.now() - since > 9000) $('#tourStepSkip').hidden = false;
+    if (s.done && Date.now() - since > 9000) $('#tourStepSkip').hidden = false;
   };
   const loop = () => { if (!el) return; place(); raf = requestAnimationFrame(loop); };
 
