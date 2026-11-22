@@ -250,3 +250,7 @@ body.dragging .drop-up { display: grid; }
 .rm-cells .rm-bar { overflow: hidden; }
 .rm-cells .rm-bar b { display: block; height: 100%; width: 0; background: var(--accent); }
 .rec-beat { top: calc(30px + env(safe-area-inset-top)); }
+.mu-zoombar { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.mu-zoombar > span { flex: 1; }
+.mu-zoombar .btn { min-height: 40px; padding: 0 14px; }
+.mu-zoombar #zIn, .mu-zoombar #zOut { width: 44px; padding: 0; font-size: 20px; }

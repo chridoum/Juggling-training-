@@ -74,11 +74,33 @@ export async function musique() {
   }
 
   // ---------- Dessin ----------
-  let view = null, frozen = false, zpk = null, zKey = '';
-  function computeView() {
+  // Partie du morceau montrée par la vue détaillée : réglée par le zoom et le défilement,
+  // cadrée sur la boucle à l'ouverture et avec « Ajuster ».
+  let view = null, zpk = null, zKey = '', peakMax = 1;
+  function fitView() {
     const len = m.loopEnd - m.loopStart, pad = Math.max(M(), len * 0.12);
-    view = { v0: Math.max(0, m.loopStart - pad), v1: Math.min(m.duration, m.loopEnd + pad) };
+    setSpan(m.loopStart - pad, m.loopEnd + pad);
   }
+  const minSpan = () => Math.min(m.duration, Math.max(1, beatLen(m) * 2));
+  function setSpan(v0, v1) {
+    let span = Math.min(m.duration, Math.max(minSpan(), v1 - v0));
+    v0 = Math.max(0, Math.min(v0, m.duration - span));
+    view = { v0, v1: v0 + span };
+  }
+  // Zoom autour de l'instant `at` (facteur > 1 : on rapproche).
+  function zoomBy(f, at = (view.v0 + view.v1) / 2) {
+    const span = view.v1 - view.v0, ns = Math.min(m.duration, Math.max(minSpan(), span / f));
+    const k = (at - view.v0) / span;
+    setSpan(at - k * ns, at - k * ns + ns);
+  }
+  // Garde la boucle (ou au moins le point t) à l'écran.
+  function keepVisible(a, b = a) {
+    const span = view.v1 - view.v0;
+    if (b - a > span) { setSpan(a - span * 0.05, b + span * 0.05); return; }
+    if (a < view.v0) setSpan(a - span * 0.05, a - span * 0.05 + span);
+    else if (b > view.v1) setSpan(b + span * 0.05 - span, b + span * 0.05);
+  }
+
   function sizeCanvas(c, H) {
     const dpr = window.devicePixelRatio || 1, W = c.clientWidth || 300;
     if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
@@ -100,13 +122,12 @@ export async function musique() {
     const key = `${v0.toFixed(3)}|${v1.toFixed(3)}|${W}`;
     if (key === zKey) return zpk;
     const d = buf.getChannelData(0), sr = buf.sampleRate, out = new Float32Array(W);
-    let mx = 0;
+    const per = ((v1 - v0) * sr) / W, stride = Math.max(4, Math.floor(per / 96));
     for (let i = 0; i < W; i++) {
       const a = Math.floor((v0 + (i / W) * (v1 - v0)) * sr), b = Math.floor((v0 + ((i + 1) / W) * (v1 - v0)) * sr);
-      let p = 0; for (let j = a; j < b; j += 8) { const x = Math.abs(d[j] || 0); if (x > p) p = x; }
-      out[i] = p; if (p > mx) mx = p;
+      let p = 0; for (let j = a; j < b; j += stride) { const x = Math.abs(d[j] || 0); if (x > p) p = x; }
+      out[i] = Math.min(1, p / peakMax);
     }
-    if (mx > 0) for (let i = 0; i < W; i++) out[i] /= mx;
     zKey = key; zpk = out; return out;
   }
 
@@ -122,8 +143,9 @@ export async function musique() {
 
   function drawZoom() {
     const c = $('#zm'); if (!c) return;
-    if (!frozen || !view) computeView();
+    if (!view) fitView();
     const { v0, v1 } = view;
+    c.dataset.view = `${v0.toFixed(2)}-${v1.toFixed(2)}`;
     const { g, W, H } = sizeCanvas(c, 176), x = t => ((t - v0) / (v1 - v0)) * W, TOP = 18;
     const A = m.loopStart, B = m.loopEnd, bl = beatLen(m), ph = m.phase || 0, Ml = M();
     g.fillStyle = css('--accent'); g.globalAlpha = 0.16; g.fillRect(x(A), TOP, x(B) - x(A), H - TOP); g.globalAlpha = 1;
@@ -144,12 +166,15 @@ export async function musique() {
     // Poignées A et B
     const acc = css('--accent'), on = css('--on-accent');
     [[A, 'A'], [B, 'B']].forEach(([t, l]) => {
-      const px = x(t);
-      g.fillStyle = acc; g.fillRect(px - 1.5, TOP, 3, H - TOP);
-      const tx = Math.min(Math.max(px - 15, 0), W - 30);
-      g.beginPath(); g.roundRect(tx, H - 36, 30, 30, 8); g.fill();
+      const px = x(t), out = px < -1 ? -1 : px > W + 1 ? 1 : 0;
+      // Poignée hors de la vue : pastille pâle au bord, avec une flèche vers elle.
+      if (!out) { g.fillStyle = acc; g.fillRect(px - 1.5, TOP, 3, H - TOP); }
+      const lab = out < 0 ? '‹' + l : out > 0 ? l + '›' : l, w = out ? 38 : 30;
+      const tx = out < 0 ? 0 : out > 0 ? W - w : Math.min(Math.max(px - 15, 0), W - 30);
+      g.globalAlpha = out ? 0.55 : 1; g.fillStyle = acc;
+      g.beginPath(); g.roundRect(tx, H - 36, w, 30, 8); g.fill();
       g.fillStyle = on; g.font = '700 15px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(l, tx + 15, H - 21); g.textAlign = 'left'; g.textBaseline = 'top';
+      g.fillText(lab, tx + w / 2, H - 21); g.textAlign = 'left'; g.textBaseline = 'top'; g.globalAlpha = 1;
     });
     if (playing) { const p = loop.position(); if (p >= v0 && p <= v1) { g.fillStyle = css('--text'); g.fillRect(x(p), TOP, 2, H - TOP); } }
   }
@@ -210,7 +235,10 @@ export async function musique() {
       ${loopMode ? `
         <div class="mu-cap"><span>Tout le morceau</span><span id="ovTxt"></span></div>
         <canvas id="ov" class="mu-ov" aria-label="Tout le morceau : fais glisser pour déplacer la boucle"></canvas>
-        <canvas id="zm" class="mu-zoom" aria-label="Boucle : fais glisser les poignées A et B"></canvas>
+        <canvas id="zm" class="mu-zoom" aria-label="Boucle : pince pour zoomer, glisse les poignées A et B ou la boucle entière"></canvas>
+        <div class="mu-zoombar"><span class="muted small">Pince pour zoomer, glisse à deux doigts</span>
+          <button class="btn" id="zOut" aria-label="Dézoomer">−</button><button class="btn" id="zIn" aria-label="Zoomer">+</button>
+          <button class="btn" id="zFit">Ajuster</button></div>
         <div class="mu-adjust">
           <div><button class="btn" data-h="A" data-d="-1" aria-label="Reculer A">‹</button><button class="btn" data-h="A" data-d="1" aria-label="Avancer A">›</button></div>
           <div class="mu-len"><b id="lenM"></b><span id="lenS"></span></div>
@@ -257,7 +285,7 @@ export async function musique() {
     });
     root.querySelectorAll('[data-snap]').forEach(b => {
       b.onclick = () => {
-        m.snapUnit = b.dataset.snap; resnap();
+        m.snapUnit = b.dataset.snap; resnap(); if (view) keepVisible(m.loopStart, m.loopEnd);
         root.querySelectorAll('[data-snap]').forEach(x => x.setAttribute('aria-pressed', x === b));
         paint(); restartIfPlaying();
       };
@@ -265,7 +293,7 @@ export async function musique() {
     root.querySelectorAll('[data-h]').forEach(b => {
       b.onclick = () => {
         const d = +b.dataset.d * step();
-        if (b.dataset.h === 'A') setA(m.loopStart + d); else setB(m.loopEnd + d);
+        if (b.dataset.h === 'A') { setA(m.loopStart + d); keepVisible(m.loopStart); } else { setB(m.loopEnd + d); keepVisible(m.loopEnd); }
         paint(); restartIfPlaying();
       };
     });
@@ -274,7 +302,7 @@ export async function musique() {
       P.metroOn = !P.metroOn; savePrefs(P); clickGain();
       e.currentTarget.setAttribute('aria-pressed', P.metroOn); e.currentTarget.textContent = `Clic : ${P.metroOn ? 'oui' : 'non'}`;
     };
-    const setBpm = b => { m.bpm = Math.max(30, Math.min(300, Math.round(b * 100) / 100)); resnap(); paint(); restartIfPlaying(); };
+    const setBpm = b => { m.bpm = Math.max(30, Math.min(300, Math.round(b * 100) / 100)); resnap(); if (view) keepVisible(m.loopStart, m.loopEnd); paint(); restartIfPlaying(); };
     $('#bm').onclick = () => setBpm(m.bpm - 0.1);
     $('#bp').onclick = () => setBpm(m.bpm + 0.1);
     $('#half').onclick = () => setBpm(m.bpm / 2);
@@ -282,7 +310,7 @@ export async function musique() {
     bindAlign();
     $('#use').onclick = async () => { clearTimeout(saveT); await updateMusic(m); location.hash = '#/entrainement'; };
 
-    if (loopMode) bindLoopCanvases();
+    if (loopMode) { view = null; bindLoopCanvases(); }
     new ResizeObserver(() => paint()).observe(root);
     paint();
   }
@@ -302,28 +330,98 @@ export async function musique() {
     };
     ov.addEventListener('pointerdown', e => { dragOv = true; ov.setPointerCapture(e.pointerId); moveLoop(e); });
     ov.addEventListener('pointermove', e => { if (dragOv) moveLoop(e); });
-    const endOv = () => { if (!dragOv) return; dragOv = false; save(); paint(); restartIfPlaying(); };
+    const endOv = () => { if (!dragOv) return; dragOv = false; if (view) keepVisible(m.loopStart, m.loopEnd); save(); paint(); restartIfPlaying(); };
     ov.addEventListener('pointerup', endOv); ov.addEventListener('pointercancel', endOv);
 
-    // Zoom : on attrape la poignée la plus proche (A ou B) et on la fait glisser, calée sur la grille.
-    let handle = null;
-    const tAt = e => { const r = zm.getBoundingClientRect(); return view.v0 + ((e.clientX - r.left) / r.width) * (view.v1 - view.v0); };
+    // Vue détaillée : poignée A/B, boucle entière, défilement, pincement pour zoomer.
+    const pts = new Map();
+    let act = null, panRaf = null;
+    const rect = () => zm.getBoundingClientRect();
+    const tAtX = x => view.v0 + (x / rect().width) * (view.v1 - view.v0);
+    const pxOf = t => ((t - view.v0) / (view.v1 - view.v0)) * rect().width;
+    const moveLoopTo = a => {
+      const s = step(), len = m.loopEnd - m.loopStart;
+      a = gridSnap(a, m, s);
+      while (a < -1e-6) a += s;
+      while (a + len > m.duration + 1e-3 && a - s >= -1e-6) a -= s;
+      m.loopStart = Math.max(0, a); m.loopEnd = Math.min(m.duration, m.loopStart + len);
+    };
+    // Applique le geste en cours à la position x (px dans la vue).
+    const apply = x => {
+      if (!act) return;
+      const t = tAtX(x);
+      if (act.kind === 'A') setA(gridSnap(t, m, step()));
+      else if (act.kind === 'B') setB(gridSnap(t, m, step()));
+      else if (act.kind === 'loop') moveLoopTo(t - act.off);
+      else if (act.kind === 'pan') { const span = view.v1 - view.v0; setSpan(act.v0 - ((x - act.x0) / rect().width) * span, act.v0 - ((x - act.x0) / rect().width) * span + span); }
+      paint();
+    };
+    // Poignée ou boucle tenue près d'un bord : la vue défile toute seule.
+    const autoPan = () => {
+      cancelAnimationFrame(panRaf);
+      if (!act || act.kind === 'pan') return;
+      const W = rect().width, edge = 36, x = act.x;
+      const depth = x < edge ? (x - edge) / edge : x > W - edge ? (x - (W - edge)) / edge : 0; // -1…1
+      if (depth) {
+        // Lent à l'entrée de la zone, plus rapide tout contre le bord.
+        const span = view.v1 - view.v0, d = Math.sign(depth) * span * (0.003 + 0.009 * Math.min(1, Math.abs(depth)));
+        setSpan(view.v0 + d, view.v1 + d);
+        apply(x);
+      }
+      panRaf = requestAnimationFrame(autoPan);
+    };
+    const pinchStart = () => {
+      const [p1, p2] = [...pts.values()];
+      act = { kind: 'pinch', d0: Math.max(10, Math.abs(p1.x - p2.x)), v0: view.v0, v1: view.v1, mid: tAtX((p1.x + p2.x) / 2), midX: (p1.x + p2.x) / 2 };
+    };
+
     zm.addEventListener('pointerdown', e => {
-      computeView();
-      const r = zm.getBoundingClientRect(), px = t => ((t - view.v0) / (view.v1 - view.v0)) * r.width, x = e.clientX - r.left;
-      const dA = Math.abs(x - px(m.loopStart)), dB = Math.abs(x - px(m.loopEnd));
-      if (Math.min(dA, dB) > 36) return;
-      handle = dA <= dB ? 'A' : 'B'; frozen = true;
-      zm.setPointerCapture(e.pointerId);
+      if (!view) fitView();
+      try { zm.setPointerCapture(e.pointerId); } catch { /* pointeur déjà relâché */ }
+      const x = e.clientX - rect().left;
+      pts.set(e.pointerId, { x });
+      if (pts.size === 2) { cancelAnimationFrame(panRaf); pinchStart(); return; }
+      if (pts.size > 2) return;
+      const dA = Math.abs(x - pxOf(m.loopStart)), dB = Math.abs(x - pxOf(m.loopEnd));
+      if (Math.min(dA, dB) <= 32) act = { kind: dA <= dB ? 'A' : 'B', x };
+      else if (x > pxOf(m.loopStart) && x < pxOf(m.loopEnd)) act = { kind: 'loop', off: tAtX(x) - m.loopStart, x };
+      else act = { kind: 'pan', x0: x, v0: view.v0, x };
+      autoPan();
     });
     zm.addEventListener('pointermove', e => {
-      if (!handle) return;
-      const t = gridSnap(tAt(e), m, step());
-      if (handle === 'A') setA(t); else setB(t);
-      paint();
+      if (!pts.has(e.pointerId)) return;
+      const x = e.clientX - rect().left;
+      pts.get(e.pointerId).x = x;
+      if (!act) return;
+      if (act.kind === 'pinch' && pts.size >= 2) {
+        const [p1, p2] = [...pts.values()];
+        const span0 = act.v1 - act.v0, span = Math.min(m.duration, Math.max(minSpan(), span0 * (act.d0 / Math.max(10, Math.abs(p1.x - p2.x)))));
+        // Le point pincé reste sous le milieu des doigts : écarter zoome, glisser à deux doigts fait défiler.
+        const k = ((p1.x + p2.x) / 2) / rect().width;
+        setSpan(act.mid - k * span, act.mid - k * span + span);
+        paint();
+        return;
+      }
+      act.x = x; apply(x);
     });
-    const endZm = () => { if (!handle) return; handle = null; frozen = false; save(); paint(); restartIfPlaying(); };
-    zm.addEventListener('pointerup', endZm); zm.addEventListener('pointercancel', endZm);
+    const end = e => {
+      pts.delete(e.pointerId);
+      if (act && act.kind === 'pinch') { act = null; return; }   // fin du pincement : on ne reprend pas de glisser
+      if (pts.size) return;
+      cancelAnimationFrame(panRaf);
+      const was = act && act.kind; act = null;
+      if (was && was !== 'pan') { save(); paint(); restartIfPlaying(); }
+    };
+    zm.addEventListener('pointerup', end); zm.addEventListener('pointercancel', end);
+    // Molette (ordinateur) : zoom autour du pointeur.
+    zm.addEventListener('wheel', e => {
+      e.preventDefault(); if (!view) fitView();
+      zoomBy(e.deltaY < 0 ? 1.25 : 0.8, tAtX(e.clientX - rect().left)); paint();
+    }, { passive: false });
+
+    $('#zIn').onclick = () => { if (!view) fitView(); zoomBy(1.5); paint(); };
+    $('#zOut').onclick = () => { if (!view) fitView(); zoomBy(1 / 1.5); paint(); };
+    $('#zFit').onclick = () => { fitView(); paint(); };
   }
 
   // ---------- Caler le clic : taper sur les temps entendus ----------
@@ -364,6 +462,7 @@ export async function musique() {
         m = normalizeMusic(rec, P.beats, P.dur);
         ovPk = peaks(buf, 600);
         let mx = 0; ovPk.forEach(v => { if (v > mx) mx = v; }); if (mx) ovPk = ovPk.map(v => v / mx);
+        peakMax = mx || 1; view = null;
         save();
       } catch (err) {
         console.warn(err); toast('Morceau illisible : ' + (err.message || err), { ms: 4000 });
