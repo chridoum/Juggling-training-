@@ -10,7 +10,13 @@ const visible = sel => { const e = document.querySelector(sel); return !!(e && e
 let clipId = null; // le clip filmé pendant la visite
 
 const STEPS = [
-  { title: 'Bienvenue dans Juglog', text: 'On va faire un tour pratique : tu vas filmer un clip, l\'analyser et le ranger. Suis simplement la zone éclairée.', next: 'Commencer' },
+  { title: 'Bienvenue dans Juglog', text: 'On va faire un tour pratique : régler la caméra, filmer un clip, l\'analyser et le ranger. Suis simplement la zone éclairée.', next: 'Commencer' },
+  { target: '#settingsBtn', title: 'Les réglages', text: 'Commence par ouvrir les réglages de l\'enregistrement.',
+    done: () => visible('#sheet:not([hidden])') },
+  { target: '#sheet', title: 'Régler avant de filmer', text: 'Le tempo du clic, la durée de chaque clip, l\'enchaînement (les clips se suivent jusqu\'à l\'arrêt), l\'écoute (casque ou haut-parleur) et la Musique, pour filmer sur un morceau en boucle. Fais défiler les réglages pour tout voir.', next: 'Suivant',
+    // La feuille remonte en haut, plus compacte, pour laisser la place à la fiche.
+    enter: () => document.body.classList.add('tour-sheet'),
+    leave: () => { document.body.classList.remove('tour-sheet'); const sh = document.getElementById('sheet'); if (sh) sh.hidden = true; } },
   { target: '#rec', title: 'Filmer', text: 'Appuie sur le bouton rouge. Un décompte de 3 secondes, puis l\'enregistrement démarre.',
     done: () => !!document.querySelector('#rec.on') },
   { target: '#rec', title: 'Arrêter', text: 'Filme quelques secondes (fais un mouvement devant la caméra), puis appuie à nouveau pour arrêter.',
@@ -19,23 +25,19 @@ const STEPS = [
     done: () => { const m = hash().match(/^#\/clip\/(.+)$/); if (m) clipId = m[1]; return !!m; } },
   { target: '.pl-speed', title: 'Analyser', text: 'Passe au ralenti : touche ×0.25. Tu as aussi l\'image par image, la boucle A-B et la découpe d\'un passage.',
     done: () => { const c = document.querySelector('.pl-speed .chip[data-v="0.25"]'); return !!(c && c.getAttribute('aria-pressed') === 'true'); } },
+  // Seulement si aucun agrès n'existe encore (nouvel utilisateur).
+  { title: 'Les agrès', text: 'Tes clips se rangent par agrès (balles, massues, poi, staff…), puis dans des dossiers que tu crées toi-même (« 3 balles », « Cascade »…). Tu n\'as pas encore d\'agrès : tu vas créer le premier en rangeant ce clip, avec « + Nouvel agrès ». Choisis-le dans la liste ou tape le nom du tien.', next: 'Suivant',
+    skip: async () => (await db.all('agres')).length > 0 },
   { target: '#place', title: 'Ranger', text: 'Range ce clip : choisis un agrès (ou crée-le), puis « Ranger ici ».',
     done: async () => { if (!clipId) return true; const c = await db.get('clips', clipId); return !!(c && c.sorted); } },
   { target: '.tabbar a[data-tab="journal"]', title: 'Le Journal', text: 'Ouvre le Journal : c\'est là que tu retrouves tous tes clips rangés.',
     done: () => hash() === '#/journal' },
-  { target: '#view a.row[href^="#/journal/a/"]', title: 'Tes agrès', text: 'Ouvre ton agrès. Dedans, tu crées tes propres dossiers ; un appui long réorganise la liste.',
+  { target: '#view a.row[href^="#/journal/a/"]', title: 'Tes agrès', text: 'Ouvre ton agrès. Dedans, tu crées tes propres dossiers ; un appui long réorganise la liste. « + Agrès » en ajoute un autre.',
     done: () => hash().startsWith('#/journal/a/') },
-  { target: '.tabbar a[data-tab="resources"]', title: 'Ressources', text: 'Ouvre les Ressources : tes vidéos de référence et tes liens de tutoriels.',
+  { target: '.tabbar a[data-tab="resources"]', title: 'Ressources', text: 'Ouvre les Ressources.',
     done: () => hash() === '#/ressources' },
-  { target: '#fabBtn', title: 'Ajouter une référence', text: 'Touche « Ajouter » pour voir comment importer une vidéo ou un lien. Sur Android, tu peux aussi partager une vidéo vers Juglog.',
-    done: () => !!document.getElementById('modal').open },
-  { target: '.tabbar a[data-tab="train"]', title: 'Retour à l\'entraînement', text: 'Ferme cette fenêtre, puis reviens à l\'Entraînement.',
-    done: () => hash() === '#/entrainement' },
-  { target: '#settingsBtn', title: 'Tempo et réglages', text: 'Ouvre les réglages : métronome, durée des clips, enchaînement…',
-    done: () => visible('#sheet:not([hidden])') },
-  { target: '#musicBtn', title: 'Musique', text: 'Ouvre la Musique : un morceau peut tourner en boucle pendant que tu filmes, avec le clic calé sur ses temps.',
-    done: () => hash() === '#/musique' },
-  { title: 'À toi de jouer', text: 'C\'est tout ! Importe un morceau ici si tu veux t\'entraîner en musique. Tu peux revoir cette visite dans les Réglages (l\'engrenage du Journal).', next: 'Terminer' },
+  { title: 'Tes modèles', text: 'Ici, à part de tes propres clips, tu gardes ce qui t\'inspire : des vidéos de tutoriel, que tu peux analyser au ralenti et comparer à tes essais, et des liens. Le bouton « Ajouter » importe une vidéo ou un lien ; sur Android, tu peux aussi partager une vidéo vers Juglog.', next: 'Suivant' },
+  { title: 'À toi de jouer', text: 'C\'est tout ! Tu peux revoir cette visite dans les Réglages (l\'engrenage du Journal ou des Ressources).', next: 'Terminer' },
 ];
 
 let el = null;
@@ -104,6 +106,7 @@ export function startTour() {
   const show = () => {
     const s = STEPS[i];
     since = Date.now(); scrolled = false;
+    if (s.enter) try { s.enter(); } catch { /* ignoré */ }
     $('#tourStep').textContent = `${i + 1} / ${STEPS.length}`;
     $('#tourTitle').textContent = s.title;
     $('#tourText').textContent = s.text;
@@ -115,7 +118,15 @@ export function startTour() {
     place();
   };
 
-  const advance = () => { if (i < STEPS.length - 1) { i++; show(); } else end(); };
+  const advance = async () => {
+    const leave = STEPS[i].leave;
+    if (leave) try { leave(); } catch { /* ignoré */ }
+    if (i >= STEPS.length - 1) { end(); return; }
+    i++;
+    // Étape inutile dans cette situation (ex. présentation des agrès quand il y en a déjà) : on la saute.
+    while (STEPS[i].skip && i < STEPS.length - 1 && await STEPS[i].skip()) i++;
+    show();
+  };
 
   // Vérifie régulièrement si le geste demandé a été fait.
   const tick = async () => {
@@ -137,9 +148,10 @@ export function startTour() {
     clearInterval(timer); cancelAnimationFrame(raf);
     window.removeEventListener('hashchange', tick);
     if (el) el.remove(); el = null;
+    document.body.classList.remove('tour-sheet');
     db.setMeta('tourDone', true);
   };
-  $('#tourSkip').onclick = end;
+  $('#tourSkip').onclick = () => { const l = STEPS[i].leave; if (l) try { l(); } catch { /* ignoré */ } end(); };
   $('#tourStepSkip').onclick = advance;
   $('#tourNext').onclick = advance;
   window.addEventListener('hashchange', tick);
