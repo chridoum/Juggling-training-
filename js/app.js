@@ -4,6 +4,7 @@ import { applyTheme } from './theme.js';
 import { migrate, purgeDeleted } from './data.js';
 import { notFound } from './ui.js';
 import { recorder } from './views/train.js';
+import { musique } from './views/musique.js';
 import { trier, journalHome, journalFolder, clipView } from './views/journal.js';
 import { compare } from './views/compare.js';
 import { resources, resourcesAgres, refView, receiveShare } from './views/resources.js';
@@ -15,6 +16,7 @@ try { applyTheme(localStorage.getItem('theme') || 'dark'); } catch { applyTheme(
 const routes = [
   [/^#?\/?$/, () => { location.replace('#/entrainement'); }],
   [/^#\/entrainement$/, () => recorder()],
+  [/^#\/musique$/, () => musique()],
   [/^#\/trier$/, () => trier()],
   [/^#\/journal$/, () => journalHome()],
   [/^#\/journal\/a\/([^/]+)(?:\/([^/]+))?$/, m => journalFolder(m[1], m[2] || null)],

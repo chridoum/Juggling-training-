@@ -207,3 +207,46 @@ body.dragging .drop-up { display: grid; }
 .pick-line .pick { flex: 1; border-bottom: 0; }
 .pick-line .icon-btn.armed { width: auto; padding: 0 10px; border-radius: 10px; color: var(--danger); font: inherit; font-size: 14px; font-weight: 600; }
 #wave.whole { cursor: default; }
+
+/* ---------- Écran Musique ---------- */
+.mu-track { margin-bottom: 14px; background: var(--surface); }
+.mu-track > svg { flex: none; }
+.mu-change { color: var(--accent); font-weight: 600; font-size: 15px; }
+.mu-gap { margin-bottom: 14px; }
+.mu-cap { display: flex; justify-content: space-between; gap: 8px; margin: 6px 2px; font-size: 13px; color: var(--text-2); }
+.mu-ov { display: block; width: 100%; height: 36px; margin-bottom: 12px; border-radius: 8px; background: var(--surface); touch-action: none; }
+.mu-zoom { display: block; width: 100%; height: 176px; border-radius: 12px; background: var(--surface); touch-action: none; }
+.mu-adjust { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; margin: 12px 0; }
+.mu-adjust > div:first-child, .mu-adjust > div:last-child { display: flex; gap: 4px; }
+.mu-adjust .btn { width: 44px; min-height: 44px; padding: 0; font-size: 22px; }
+.mu-len { display: grid; text-align: center; line-height: 1.2; }
+.mu-len b { font-size: 20px; }
+.mu-len span { font-size: 14px; color: var(--text-2); }
+.mu-snap { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--text-2); }
+.mu-snap .seg { width: 190px; }
+.mu-p { margin: 0 2px 10px; font-size: 15px; line-height: 1.4; }
+.mu-transport { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 18px 0 2px; }
+.mu-transport #click { justify-self: end; }
+.mu-play { display: grid; place-items: center; width: 64px; height: 64px; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+.mu-play svg { width: 26px; height: 26px; }
+.mu-bpm { display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; gap: 8px; text-align: center; }
+.mu-bpm b { font-size: 36px; font-variant-numeric: tabular-nums; }
+.mu-bpm span { font-size: 14px; color: var(--text-2); }
+.mu-bpm .btn { padding: 0; }
+.mu-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.mu-row3 .btn { padding: 0 6px; font-size: 15px; }
+.mu-use { margin-top: 22px; }
+
+/* Bandeau musique sur l'écran d'enregistrement */
+.rec-music { position: absolute; left: 14px; right: 14px; top: calc(72px + env(safe-area-inset-top)); display: grid; gap: 8px; padding: 10px 12px; border-radius: 14px; background: rgba(0,0,0,.6); }
+.rm-top { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.rm-top svg { width: 18px; height: 18px; color: var(--accent); }
+.rm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.rm-top span:last-child { color: #c9c9cf; font-variant-numeric: tabular-nums; }
+.rm-cells { display: grid; gap: 3px; }
+.rm-cells i { display: block; height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); }
+.rm-cells i.on { background: var(--accent); }
+.rm-cells i.now { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+.rm-cells .rm-bar { overflow: hidden; }
+.rm-cells .rm-bar b { display: block; height: 100%; width: 0; background: var(--accent); }
+.rec-beat { top: calc(30px + env(safe-area-inset-top)); }

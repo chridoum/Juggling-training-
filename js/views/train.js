@@ -1,19 +1,13 @@
 // Entraînement : on arrive directement sur l'écran d'enregistrement.
 // À l'arrêt, on file vers la liste des clips à trier.
 import { Metronome, makeTapper } from '../metronome.js';
-import { MusicLoop, listMusics, getMusic, importMusic, removeMusic, updateMusic, loadBuffer, peaks, snap, nextBeat } from '../music.js';
+import { MusicLoop, getMusic, loadBuffer, loadPrefs, savePrefs, normalizeMusic, loopSpan, beatLen, measuresText, fmtSec, playWithClick } from '../music.js';
 import { addClip, unsortedClips } from '../data.js';
 import { setView, onLeave, esc, ICON, toast } from '../ui.js';
 const fmtBpm = b => (Math.round(b * 10) / 10).toLocaleString('fr-FR');
 
 const MIMES = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-const DEFAULTS = { chain: true, bpm: 100, beats: 4, dur: 60, casque: false, metroOn: true, facing: 'environment', musicId: null };
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-
-function loadPrefs() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem('juglog.rec') || '{}') }; } catch { return { ...DEFAULTS }; }
-}
-function savePrefs(p) { try { localStorage.setItem('juglog.rec', JSON.stringify(p)); } catch { /* ignoré */ } }
 
 export async function recorder() {
   const P = loadPrefs();
@@ -31,18 +25,17 @@ export async function recorder() {
       <span class="rec-pill" id="timer">0:00</span>
       <button class="rec-icon" id="flip" aria-label="Changer de caméra"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3"/></svg></button>
     </div>
+    <div class="rec-music" id="recMusic" hidden>
+      <div class="rm-top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+        <span class="rm-name" id="rmName"></span><span id="rmPos"></span></div>
+      <div class="rm-cells" id="rmCells"></div>
+    </div>
     <div class="rec-count" id="count" hidden></div>
     <div class="rec-err" id="err" hidden></div>
 
     <div class="sheet" id="sheet" hidden>
       <div class="opt"><span>Musique</span>
-        <button class="music-row" id="musicBtn"><span class="row-main"><span class="row-title" id="musicName">Aucune</span><span class="row-sub" id="musicSub"></span></span>${ICON.chev}</button>
-        <div id="musicBox" hidden>
-          <div class="seg"><button data-whole="0">Passage du clip</button><button data-whole="1">Morceau entier</button></div>
-          <canvas id="wave" aria-label="Passage joué en boucle : fais glisser pour le choisir"></canvas>
-          <div class="btn-row"><button class="btn" id="align">Caler le clic</button><button class="btn" id="half">Tempo ÷2</button><button class="btn" id="double">Tempo ×2</button></div>
-          <p class="small muted" id="alignHint" hidden>Tape « Caler » sur chaque temps, en commençant sur un « 1 » (au moins 4 fois).</p>
-        </div>
+        <button class="music-row" id="musicBtn"><span class="row-main"><span class="row-title" id="musicName">Aucune</span><span class="row-sub" id="musicSub">Le clic seul</span></span>${ICON.chev}</button>
       </div>
       <div class="bpm-row">
         <button class="btn" id="m5" aria-label="Moins 5">−5</button>
@@ -57,7 +50,8 @@ export async function recorder() {
         <button class="btn" id="metroOn" aria-pressed="${P.metroOn}">Clic : ${P.metroOn ? 'oui' : 'non'}</button>
       </div>
       <div class="opt"><span>Temps par mesure</span><div class="chips">${chips('beats', [1, 2, 3, 4, 6, 8], P.beats)}</div></div>
-      <div class="opt"><span>Durée d'un clip</span><div class="chips">${chips('dur', [10, 30, 60, 120], P.dur, v => v < 60 ? v + ' s' : v / 60 + ' min')}</div></div>
+      <p class="small muted" id="durNote" hidden></p>
+      <div class="opt" id="durOpt"><span>Durée d'un clip</span><div class="chips">${chips('dur', [10, 30, 60, 120], P.dur, v => v < 60 ? v + ' s' : v / 60 + ' min')}</div></div>
       <div class="opt"><span>Enchaînement</span><div class="seg">
         <button data-chain="1" aria-pressed="${P.chain}">Jusqu'à l'arrêt</button>
         <button data-chain="0" aria-pressed="${!P.chain}">Un seul clip</button></div></div>
@@ -137,35 +131,20 @@ export async function recorder() {
   const sheet = $('#sheet');
   $('#settingsBtn').onclick = () => { if (!recording && !counting) sheet.hidden = !sheet.hidden; };
 
-  // --- Musique ---
-  let music = null, mbuf = null, mpk = null, onSegHook = null;
-  const curBpm = () => (music && music.bpm ? music.bpm : P.bpm);
-  // Passage choisi (durée du clip) ou morceau entier, selon l'option du morceau.
-  const passLen = () => (music ? Math.min(P.dur, music.duration) : 0);
-  const winLen = () => (music ? (music.whole ? music.duration : passLen()) : 0);
-  const loopFrom = () => (music && !music.whole ? music.loopStart : 0);
-  let saveT = null;
-  const saveMusic = () => { clearTimeout(saveT); saveT = setTimeout(() => music && updateMusic(music), 400); };
+  // --- Musique (réglée sur l'écran Musique) ---
+  let music = null, mbuf = null, onSegHook = null;
+  const loopMode = () => !!(music && mbuf && music.mode === 'loop');
+  const curBpm = () => (music && mbuf ? music.bpm : P.bpm);
+  const loopLen = () => (music ? loopSpan(music).len : 0);
 
   const showBpm = () => {
     const b = curBpm();
-    $('#bpm').textContent = music ? fmtBpm(b) : b; $('#bpmShort').textContent = music ? Math.round(b) : b;
+    $('#bpm').textContent = b; $('#bpmShort').textContent = Math.round(b);
     metro.bpm = b;
-    const st = music ? [1, 0.1] : [5, 1];
-    [['#m5', -st[0]], ['#m1', -st[1]], ['#p1', st[1]], ['#p5', st[0]]].forEach(([id, d]) => {
-      const el = $(id); el.textContent = (d > 0 ? '+' : '−') + String(Math.abs(d)).replace('.', ','); el.dataset.d = d;
-    });
     savePrefs(P);
   };
-  const setBpm = b => {
-    b = Math.max(30, Math.min(260, Math.round(b * 100) / 100));
-    if (music) {
-      music.bpm = b; music.loopStart = snap(music.loopStart, b, music.phase, music.duration, passLen()); saveMusic();
-      drawWave(); if (testing) restartAudio();
-    } else P.bpm = Math.round(b);
-    showBpm();
-  };
-  ['#m5', '#m1', '#p1', '#p5'].forEach(id => { $(id).onclick = e => setBpm(curBpm() + +e.currentTarget.dataset.d); });
+  const setBpm = b => { P.bpm = Math.max(30, Math.min(260, Math.round(b))); showBpm(); };
+  [['#m5', -5], ['#m1', -1], ['#p1', 1], ['#p5', 5]].forEach(([id, d]) => { $(id).onclick = () => setBpm(P.bpm + d); });
   $('#tap').onclick = () => { const b = tap(); if (b) setBpm(b); };
 
   const pick = (attr, apply) => v.querySelectorAll(`[data-${attr}]`).forEach(b => {
@@ -174,11 +153,8 @@ export async function recorder() {
       apply(b.dataset[attr]); savePrefs(P);
     };
   });
-  pick('beats', x => { P.beats = +x; metro.beats = P.beats; });
-  pick('dur', x => {
-    P.dur = +x;
-    if (music) { music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, passLen()); saveMusic(); drawWave(); if (testing) restartAudio(); }
-  });
+  pick('beats', x => { P.beats = +x; metro.beats = P.beats; showMusic(); });
+  pick('dur', x => { P.dur = +x; showMusic(); });
   pick('chain', x => { P.chain = x === '1'; });
   pick('casque', x => { P.casque = x === '1'; metro.setRouting({ recording: P.casque }); loop.setRouting({ recording: P.casque }); });
 
@@ -202,170 +178,75 @@ export async function recorder() {
   // Démarre la musique (si choisie) et le métronome calé sur ses temps, ou le métronome seul.
   function startAudio(at) {
     if (music && mbuf) {
-      const from = loopFrom();
-      loop.start(mbuf, {
-        from, len: winLen(), at,
-        onSegment: t => {
-          const nb = nextBeat(from, music.bpm, music.phase, P.beats);
-          if (!metro.running) metro.start(t + (nb.at - from), nb.n); else metro.resync(t + (nb.at - from), nb.n);
-          if (onSegHook) onSegHook(t);
-        },
-      });
-      playhead();
-    } else if (P.metroOn) metro.start(at);
+      playWithClick({ loop, metro, buf: mbuf, m: music, beats: P.beats, at, onSegment: t => { if (onSegHook) onSegHook(t); } });
+      bandeau();
+    } else if (P.metroOn) { metro.bpm = P.bpm; metro.start(at); }
   }
-  function stopAudio() { loop.stop(); metro.stop(); drawWave(); }
-  function restartAudio() { stopAudio(); startAudio(ctx.currentTime + 0.05); }
+  function stopAudio() { loop.stop(); metro.stop(); bandeau(); }
   $('#flip').onclick = () => {
     if (recording || counting) return;
     P.facing = P.facing === 'user' ? 'environment' : 'user'; savePrefs(P); openCamera();
   };
 
-  // --- Musique : affichage et choix ---
-  const wave = $('#wave');
-  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  function drawWave() {
-    if (!music || !mpk) return;
-    const dpr = window.devicePixelRatio || 1, W = wave.clientWidth || 300, H = 72;
-    wave.width = W * dpr; wave.height = H * dpr;
-    const g = wave.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-    const D = music.duration, x = t => (t / D) * W;
-    const a = loopFrom(), b = a + winLen();
-    g.fillStyle = css('--accent'); g.globalAlpha = 0.18; g.fillRect(x(a), 0, Math.max(2, x(b) - x(a)), H); g.globalAlpha = 1;
-    for (let i = 0; i < W; i++) {
-      const t = (i / W) * D, h = Math.max(1, mpk[Math.floor((i / W) * mpk.length)] * (H - 8));
-      g.fillStyle = t >= a && t <= b ? css('--accent') : css('--text-2');
-      g.globalAlpha = t >= a && t <= b ? 1 : 0.45;
-      g.fillRect(i, (H - h) / 2, 1, h);
-    }
-    g.globalAlpha = 1;
-    // Temps dans la boucle (les « 1 » plus marqués), pour vérifier le calage d'un coup d'œil.
-    if (music.bpm && x(60 / music.bpm) > 3) {
-      const nb = nextBeat(a, music.bpm, music.phase, P.beats);
-      for (let t = nb.at, n = nb.n; t <= b; t += 60 / music.bpm, n = (n + 1) % P.beats) {
-        g.fillStyle = css('--text'); g.globalAlpha = n === 0 ? 0.9 : 0.35;
-        g.fillRect(Math.round(x(t)), 0, 1, n === 0 ? 10 : 6);
-      }
-      g.globalAlpha = 1;
-    }
-    if (loop.running) { g.fillStyle = css('--text'); g.fillRect(Math.round(x(loop.position())), 0, 2, H); }
-  }
-  function playhead() {
-    const step = () => { if (!loop.running) return; drawWave(); requestAnimationFrame(step); };
-    requestAnimationFrame(step);
-  }
-
+  // --- Musique : résumé, bandeau de progression ---
   function showMusic() {
-    $('#musicName').textContent = music ? music.name : 'Aucune';
-    const mmss = t => `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, '0')}`;
-    const what = music && music.whole ? `morceau entier (${mmss(music.duration)})` : `boucle de ${Math.round(winLen())} s`;
-    $('#musicSub').textContent = music ? (music.bpm ? `${fmtBpm(music.bpm)} BPM · ${what}` : `Tempo non trouvé : règle-le à la main · ${what}`) : 'Le clic seul';
-    v.querySelectorAll('[data-whole]').forEach(b => b.setAttribute('aria-pressed', String(!!(music && music.whole) === (b.dataset.whole === '1'))));
-    wave.classList.toggle('whole', !!(music && music.whole));
-    $('#musicBox').hidden = !music;
-    showBpm(); drawWave();
+    const on = !!(music && mbuf);
+    $('#musicName').textContent = on ? music.name : 'Aucune';
+    $('#musicSub').textContent = !on ? 'Le clic seul'
+      : music.mode === 'loop' ? `Un clip = la boucle · ${measuresText(loopLen(), music, P.beats)} · ${fmtSec(loopLen())}`
+        : `Morceau entier · un clip toutes les ${P.dur < 60 ? P.dur + ' s' : P.dur / 60 + ' min'}`;
+    // Le tempo vient de la musique : les réglages du clic seul sont masqués.
+    v.querySelector('.bpm-row').hidden = on; $('#tap').hidden = on;
+    $('#durOpt').hidden = loopMode();
+    $('#durNote').hidden = !loopMode();
+    if (loopMode()) $('#durNote').textContent = `Durée d'un clip : celle de la boucle (${fmtSec(loopLen())}).`;
+    $('#recMusic').hidden = !on;
+    if (on) {
+      $('#rmName').textContent = music.name;
+      const n = loopMode() ? Math.max(1, Math.ceil(loopLen() / (beatLen(music) * P.beats) - 1e-6)) : 0;
+      $('#rmCells').innerHTML = n && n <= 32 ? Array.from({ length: n }, () => '<i></i>').join('') : '<i class="rm-bar"><b></b></i>';
+      $('#rmCells').style.gridTemplateColumns = n && n <= 32 ? `repeat(${n}, minmax(0, 1fr))` : '1fr';
+    }
+    showBpm();
+    bandeau();
   }
 
-  async function selectMusic(m) {
-    stopTest();
-    music = null; mbuf = null; mpk = null;
-    P.musicId = m ? m.id : null; savePrefs(P);
-    if (m) {
-      $('#musicName').textContent = 'Chargement…';
-      try {
-        mbuf = await loadBuffer(m, ctx); mpk = peaks(mbuf, 600); music = m;
-        music.loopStart = snap(music.loopStart || 0, music.bpm, music.phase, music.duration, Math.min(P.dur, music.duration));
-      } catch (err) {
-        console.warn(err); toast('Morceau illisible : ' + (err.message || err), { ms: 4000 });
-        P.musicId = null; savePrefs(P);
+  // Bandeau : mesure en cours dans la boucle (ou position dans le morceau), mis à jour pendant la lecture.
+  let rmRaf = null;
+  function bandeau() {
+    cancelAnimationFrame(rmRaf);
+    if (!music || !mbuf) return;
+    const draw = () => {
+      if (!v.isConnected) return;
+      const { from, len } = loopSpan(music), run = loop.running;
+      const pos = run ? loop.position() - from : 0;
+      if (loopMode()) {
+        const M = beatLen(music) * P.beats, n = Math.max(1, Math.ceil(len / M - 1e-6));
+        const cur = run ? Math.min(n, Math.floor(pos / M) + 1) : 0;
+        $('#rmPos').textContent = run ? `mes. ${cur} / ${n}` : `${n} mes. · ${fmtSec(len)}`;
+        const cells = $('#rmCells').children;
+        if (cells.length === n) [...cells].forEach((c, i) => { c.className = i < cur - 1 ? 'on' : i === cur - 1 ? 'now' : ''; });
+        else { const b = $('#rmCells b'); if (b) b.style.width = `${run ? (pos / len) * 100 : 0}%`; }
+      } else {
+        $('#rmPos').textContent = `${fmt(run ? pos : 0)} / ${fmt(music.duration)}`;
+        const b = $('#rmCells b'); if (b) b.style.width = `${run ? (pos / len) * 100 : 0}%`;
       }
+      if (run) rmRaf = requestAnimationFrame(draw);
+    };
+    draw();
+  }
+
+  async function loadMusic() {
+    music = null; mbuf = null;
+    const m = await getMusic(P.musicId);
+    if (m) {
+      try { mbuf = await loadBuffer(m, ctx); music = normalizeMusic(m, P.beats, P.dur); }
+      catch (err) { console.warn(err); toast('Morceau illisible : choisis-le à nouveau dans Musique', { ms: 4000 }); music = null; mbuf = null; }
     }
     showMusic();
   }
-
-  // Fenêtre de choix du morceau : liste mémorisée, import, suppression (deux appuis).
-  async function chooseMusic() {
-    const list = await listMusics();
-    const d = document.getElementById('modal');
-    d.innerHTML = `<h3>Musique</h3>
-      <div class="pick-list">
-        ${list.map(m => `<div class="pick-line"><button class="pick" data-m="${m.id}"><span>${esc(m.name)}${music && music.id === m.id ? ' ✓' : ''}<small>${m.bpm ? ' · ' + fmtBpm(m.bpm) + ' BPM' : ''}</small></span></button>
-          <button class="icon-btn" data-delm="${m.id}" aria-label="Supprimer ce morceau">${ICON.trash}</button></div>`).join('')}
-        <button class="pick" data-m="">Sans musique${music ? '' : ' ✓'}</button>
-        <button class="pick add" id="impM">+ Importer un morceau</button>
-      </div>
-      <input type="file" id="mFile" accept="audio/*" hidden>
-      <p class="small">Fichiers audio du téléphone (MP3, M4A…). Les morceaux de Spotify ou Deezer sont protégés et ne peuvent pas être lus ici.</p>
-      <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Fermer</button></div>`;
-    d.querySelector('[value=cancel]').onclick = () => d.close();
-    d.querySelectorAll('[data-m]').forEach(b => { b.onclick = async () => { d.close(); await selectMusic(list.find(m => m.id === b.dataset.m) || null); }; });
-    d.querySelectorAll('[data-delm]').forEach(b => {
-      b.onclick = async () => {
-        if (!b.classList.contains('armed')) { b.classList.add('armed'); b.innerHTML = 'Suppr. ?'; return; }
-        if (music && music.id === b.dataset.delm) await selectMusic(null);
-        await removeMusic(b.dataset.delm); d.close(); chooseMusic();
-      };
-    });
-    d.querySelector('#impM').onclick = () => d.querySelector('#mFile').click();
-    d.querySelector('#mFile').onchange = async e => {
-      const f = e.target.files[0]; if (!f) return;
-      d.close(); toast('Analyse du morceau…', { ms: 6000 });
-      try { const m = await importMusic(f, ctx); await selectMusic(m); toast(m.bpm ? `Tempo trouvé : ${fmtBpm(m.bpm)} BPM` : 'Tempo non trouvé : règle-le à la main', { ms: 3000 }); }
-      catch (err) { console.warn(err); toast('Ce fichier audio n\'a pas pu être lu', { ms: 4000 }); }
-    };
-    if (!d.open) d.showModal();
-  }
-  $('#musicBtn').onclick = () => { if (!recording && !counting) chooseMusic(); };
-
-  // Glisser sur la forme d'onde : déplace le passage joué (calé sur un temps).
-  let dragW = false;
-  const moveWin = e => {
-    const r = wave.getBoundingClientRect(), t = ((e.clientX - r.left) / r.width) * music.duration - winLen() / 2;
-    music.loopStart = snap(t, music.bpm, music.phase, music.duration, winLen());
-    drawWave();
-  };
-  wave.addEventListener('pointerdown', e => { if (!music || music.whole || recording) return; dragW = true; wave.setPointerCapture(e.pointerId); moveWin(e); });
-  wave.addEventListener('pointermove', e => { if (dragW) moveWin(e); });
-  const endWin = () => { if (!dragW) return; dragW = false; saveMusic(); showMusic(); if (testing) restartAudio(); };
-  wave.addEventListener('pointerup', endWin); wave.addEventListener('pointercancel', endWin);
-
-  v.querySelectorAll('[data-whole]').forEach(b => {
-    b.onclick = () => {
-      if (!music || recording || counting) return;
-      music.whole = b.dataset.whole === '1'; saveMusic(); showMusic();
-      if (testing) restartAudio();
-    };
-  });
-  $('#half').onclick = () => music && setBpm(music.bpm / 2);
-  $('#double').onclick = () => music && setBpm(music.bpm * 2);
-
-  // Caler le clic : on tape sur les temps entendus ; on en déduit où tombent les « 1 ».
-  let taps = [], alignT = null;
-  $('#align').onclick = async () => {
-    if (!music || !music.bpm) return;
-    if (!testing) { await ctx.resume(); testing = true; $('#test').textContent = 'Arrêter'; startAudio(ctx.currentTime + 0.05); taps = []; $('#alignHint').hidden = false; return; }
-    $('#alignHint').hidden = false;
-    // Ce qu'on entend sort avec un léger retard : on compense pour retrouver l'instant du morceau.
-    const lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
-    taps.push(loop.position(ctx.currentTime - lat));
-    $('#align').textContent = `Caler (${taps.length})`;
-    clearTimeout(alignT);
-    alignT = setTimeout(() => {
-      if (taps.length >= 4) {
-        const Pd = 60 / music.bpm;
-        let sx = 0, sy = 0;
-        taps.forEach(p => { const a = (2 * Math.PI * (((p % Pd) + Pd) % Pd)) / Pd; sx += Math.cos(a); sy += Math.sin(a); });
-        const res = ((Math.atan2(sy, sx) / (2 * Math.PI)) * Pd + Pd) % Pd;
-        music.phase = Math.round((res + Math.round((taps[0] - res) / Pd) * Pd) * 1000) / 1000;
-        music.loopStart = snap(music.loopStart, music.bpm, music.phase, music.duration, passLen());
-        saveMusic(); restartAudio(); drawWave();
-        toast('Clic calé sur la musique');
-      } else toast('Il faut au moins 4 appuis');
-      taps = []; $('#align').textContent = 'Caler le clic'; $('#alignHint').hidden = true;
-    }, 1800);
-  };
-  new ResizeObserver(() => drawWave()).observe(wave);
-  getMusic(P.musicId).then(m => (m ? selectMusic(m) : showMusic()));
+  $('#musicBtn').onclick = () => { if (!recording && !counting) location.hash = '#/musique'; };
+  loadMusic();
 
   // --- Enregistrement ---
   const recBtn = $('#rec');
@@ -422,7 +303,7 @@ export async function recorder() {
     const c = {
       rec, chunks: [], startMs: performance.now(), endMs: 0, thumb: null,
       mime: (rec.mimeType || mime || 'video/webm').split(';')[0],
-      meta: (P.metroOn || music) ? { bpm: curBpm(), beats: P.beats, injected: P.casque, offsetMs: Math.round(metro.msToNextBeat()), ...(music ? { music: music.name } : {}) } : null,
+      meta: (P.metroOn || music) ? { bpm: curBpm(), beats: P.beats, injected: P.casque, offsetMs: Math.round(metro.msToNextBeat()), ...(music && mbuf ? { music: music.name, ...(loopMode() ? { loop: [music.loopStart, music.loopEnd] } : {}) } : {}) } : null,
     };
     rec.ondataavailable = e => { if (e.data && e.data.size) c.chunks.push(e.data); };
     pending++;
@@ -436,14 +317,13 @@ export async function recorder() {
     if (c.rec.state !== 'inactive') c.rec.stop();
   }
 
-  // Avec une musique en mode enchaîné, chaque clip démarre pile au début d'une répétition de la boucle :
-  // tous les clips ont la même musique au même endroit.
-  const musicDrives = () => music && mbuf && !music.whole && P.chain && winLen() >= P.dur - 0.01;
+  // Mode « un clip = la boucle » : chaque clip commence pile au début d'une répétition de la boucle
+  // et s'arrête à sa fin ; la musique qui repart marque la coupure (pas de bip).
   let rotT = null;
-  function rotate() {
+  function onLoopRestart() {
     if (!recording) return;
-    endBeep();
-    const old = cur; startClip(); endClip(old);
+    if (P.chain) { const old = cur; startClip(); endClip(old); }
+    else stopRecording(true);
   }
 
   function beginRecording() {
@@ -451,7 +331,7 @@ export async function recorder() {
     let first = true;
     onSegHook = t => {
       if (first) { first = false; return; }
-      if (recording && musicDrives()) rotT = setTimeout(rotate, Math.max(0, (t - ctx.currentTime) * 1000));
+      if (recording && loopMode()) rotT = setTimeout(onLoopRestart, Math.max(0, (t - ctx.currentTime) * 1000));
     };
     startAudio(ctx.currentTime + 0.05);
     startClip();
@@ -463,7 +343,7 @@ export async function recorder() {
     const s = (performance.now() - cur.startMs) / 1000;
     $('#timer').textContent = seq > 1 ? `${fmt(s)} · clip ${seq}` : fmt(s);
     if (!cur.thumb && s >= 1.2) cur.thumb = grabThumb();
-    if (s >= P.dur && !musicDrives()) {
+    if (s >= P.dur && !loopMode()) {
       endBeep();
       if (P.chain) { const old = cur; startClip(); endClip(old); }
       else stopRecording();
@@ -480,11 +360,11 @@ export async function recorder() {
     } catch { return null; }
   }
 
-  function stopRecording() {
+  function stopRecording(atLoopEnd = false) {
     if (!recording) return;
     recording = false; clearInterval(timerId); clearTimeout(rotT); onSegHook = null;
     stopAudio();
-    if (performance.now() - cur.startMs < P.dur * 1000 - 150) endBeep(); // arrêt à la main
+    if (!atLoopEnd && (loopMode() || performance.now() - cur.startMs < P.dur * 1000 - 150)) endBeep(); // arrêt à la main
     endClip(cur);
     setRecUi(false);
     $('#timer').textContent = '0:00';
@@ -524,7 +404,7 @@ export async function recorder() {
   onLeave(() => {
     countTimers.forEach(clearTimeout); clearInterval(timerId);
     try { metro.stop(); loop.stop(); } catch { /* ignoré */ }
-    clearTimeout(rotT); clearTimeout(saveT); if (music) updateMusic(music);
+    clearTimeout(rotT); cancelAnimationFrame(rmRaf);
     // Si on quitte en plein enregistrement, le clip déjà filmé est quand même gardé.
     if (recording) { recording = false; try { endClip(cur); } catch { /* ignoré */ } }
     [camStream, micStream].forEach(s => s && s.getTracks().forEach(t => t.stop()));

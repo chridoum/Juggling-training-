@@ -29,7 +29,7 @@ export async function importMusic(file, ctx) {
   await media.saveVideo(id, file);
   const m = {
     id, name: (file.name || 'Morceau').replace(/\.[^.]+$/, ''), mime: file.type || 'audio/mpeg', size: file.size,
-    duration: buf.duration, bpm, phase, detected: { bpm, phase }, loopStart: snap(0, bpm, phase, buf.duration),
+    duration: buf.duration, bpm, phase, detected: { bpm, phase }, mode: 'loop', snapUnit: 'mesure',
   };
   await saveList([...(await listMusics()), m]);
   buffers.set(id, buf);
@@ -207,4 +207,79 @@ export class MusicLoop {
     this.sources.forEach(s => { try { s.stop(t + 0.01); } catch { /* déjà fini */ } });
     this.sources = [];
   }
+}
+
+// ---------- Réglages de l'enregistreur (partagés avec l'écran Musique) ----------
+const REC_KEY = 'juglog.rec';
+export const REC_DEFAULTS = { chain: true, bpm: 100, beats: 4, dur: 60, casque: false, metroOn: true, facing: 'environment', musicId: null };
+export function loadPrefs() {
+  try { return { ...REC_DEFAULTS, ...JSON.parse(localStorage.getItem(REC_KEY) || '{}') }; } catch { return { ...REC_DEFAULTS }; }
+}
+export function savePrefs(p) { try { localStorage.setItem(REC_KEY, JSON.stringify(p)); } catch { /* ignoré */ } }
+
+// ---------- Boucle A–B ----------
+// mode « loop » : un clip = la boucle A–B (la musique repart de A à chaque clip).
+// mode « continu » : le morceau entier tourne en boucle, les clips sont coupés toutes les N secondes.
+export const beatLen = m => 60 / (m.bpm || 120);
+export const stepLen = (m, beats, unit = m.snapUnit) => beatLen(m) * (unit === 'temps' ? 1 : beats);
+
+// Point de la grille (temps ou mesures, à partir d'un « 1 ») le plus proche de t.
+export function gridSnap(t, m, step) {
+  const ph = m.phase || 0;
+  return ph + Math.round((t - ph) / step) * step;
+}
+
+// Premier « 1 » du morceau (au tout début, à moins d'une mesure du départ).
+export function firstDownbeat(m, beats) {
+  const M = beatLen(m) * beats;
+  let t = (m.phase || 0) % M;
+  if (t < 0) t += M;
+  return t > m.duration ? 0 : t;
+}
+
+// Boucle par défaut : depuis le début du morceau, de la durée de clip choisie arrondie à la mesure.
+export function defaultLoop(m, beats, dur) {
+  const M = beatLen(m) * beats, A = firstDownbeat(m, beats);
+  let n = Math.max(1, Math.round(dur / M));
+  while (n > 1 && A + n * M > m.duration + 1e-3) n--;
+  return { loopStart: A, loopEnd: Math.min(m.duration, A + n * M) };
+}
+
+// Complète une fiche (morceaux importés avant cette version, ou boucle jamais réglée).
+export function normalizeMusic(m, beats, dur) {
+  if (!m.mode) m.mode = m.whole ? 'continu' : 'loop';
+  delete m.whole;
+  if (!m.snapUnit) m.snapUnit = 'mesure';
+  if (!m.bpm) m.bpm = 120;
+  const ok = m.loopEnd != null && m.loopStart >= 0 && m.loopEnd > m.loopStart + 0.05 && m.loopEnd <= m.duration + 1e-3;
+  if (!ok) Object.assign(m, defaultLoop(m, beats, dur));
+  return m;
+}
+
+// Passage joué selon le mode.
+export function loopSpan(m) {
+  return m.mode === 'continu' ? { from: 0, len: m.duration } : { from: m.loopStart, len: m.loopEnd - m.loopStart };
+}
+
+// « 16 mesures », « 16 mesures 2 temps », « 3 temps ».
+export function measuresText(len, m, beats) {
+  const tb = Math.round(len / beatLen(m)), n = Math.floor(tb / beats), r = tb % beats;
+  const mes = n ? `${n} mesure${n > 1 ? 's' : ''}` : '';
+  const tps = r ? `${r} temps` : '';
+  return [mes, tps].filter(Boolean).join(' ') || '—';
+}
+export const fmtSec = s => `${(Math.round(s * 10) / 10).toLocaleString('fr-FR', { minimumFractionDigits: 1 })} s`;
+
+// Lance la musique (passage du mode choisi) avec le métronome calé sur ses temps.
+export function playWithClick({ loop, metro, buf, m, beats, at, onSegment }) {
+  const { from, len } = loopSpan(m);
+  metro.bpm = m.bpm; metro.beats = beats;
+  loop.start(buf, {
+    from, len, at,
+    onSegment: t => {
+      const nb = nextBeat(from, m.bpm, m.phase || 0, beats);
+      if (!metro.running) metro.start(t + (nb.at - from), nb.n); else metro.resync(t + (nb.at - from), nb.n);
+      if (onSegment) onSegment(t);
+    },
+  });
 }
