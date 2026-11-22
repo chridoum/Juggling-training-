@@ -7,6 +7,7 @@ import {
 } from '../music.js';
 import { LOCALE } from '../i18n.js';
 import { setView, onLeave, esc, ICON, toast } from '../ui.js';
+import { musicTour } from '../tour.js';
 
 const fmtBpm = b => (Math.round(b * 10) / 10).toLocaleString(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -220,6 +221,7 @@ export async function musique() {
       root.innerHTML = `<div class="empty"><strong>Aucune musique</strong>Importe un morceau du téléphone : il tournera en boucle pendant que tu filmes, avec le clic calé sur ses temps.
         <br><button class="btn primary" id="choose">Choisir un morceau</button></div>`;
       $('#choose').onclick = chooseMusic;
+      musicTour(false);
       return;
     }
     const loopMode = m.mode === 'loop';
@@ -314,6 +316,7 @@ export async function musique() {
     if (loopMode) { view = null; bindLoopCanvases(); }
     new ResizeObserver(() => paint()).observe(root);
     paint();
+    musicTour(true);
   }
 
   // ---------- Gestes sur la forme d'onde ----------

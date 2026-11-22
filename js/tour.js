@@ -1,19 +1,23 @@
-// Visite guidée pratique : au premier lancement, chaque étape montre un bouton et attend que
-// l'utilisateur fasse le geste lui-même (filmer, arrêter, ouvrir, ralentir, ranger…) pour passer
-// à la suite. Le reste de l'écran est bloqué pour qu'on suive le chemin ; on peut tout passer,
-// et une étape bloquée propose de la sauter au bout de quelques secondes.
-// On la revoit depuis les Réglages.
+// Visites guidées.
+// - La visite générale, au premier lancement : chaque étape éclaire un élément et attend que
+//   l'utilisateur fasse le geste lui-même (ou touche « Suivant » pour les étapes de présentation).
+// - La visite de la page Musique, à la première ouverture de cette page.
+// Le reste de l'écran est bloqué pour qu'on suive le chemin ; une étape peut autoriser une page
+// « en excursion » (la visite se met en pause et reprend au retour). On peut tout passer, et une
+// étape bloquée propose de la sauter au bout de quelques secondes.
 import * as db from './db.js';
 
 const hash = () => location.hash || '#/';
 const visible = sel => { const e = document.querySelector(sel); return !!(e && e.getClientRects().length); };
-let clipId = null; // le clip filmé pendant la visite
+const exists = sel => [...document.querySelectorAll(sel)].some(e => e.getClientRects().length);
+let clipId = null; // le clip filmé pendant la visite générale
 
-const STEPS = [
+// ---------- Visite générale ----------
+const MAIN = [
   { title: 'Bienvenue dans Juglog', text: 'On va faire un tour pratique : régler la caméra, filmer un clip, l\'analyser et le ranger. Suis simplement la zone éclairée.', next: 'Commencer' },
   { route: '#/entrainement', target: '#settingsBtn', title: 'Les réglages', text: 'Commence par ouvrir les réglages de l\'enregistrement.',
     done: () => visible('#sheet:not([hidden])') },
-  { route: '#/entrainement', target: '#sheet', title: 'Régler avant de filmer', text: 'Le tempo du clic, la durée de chaque clip, l\'enchaînement (les clips se suivent jusqu\'à l\'arrêt), l\'écoute (casque ou haut-parleur) et la Musique, pour filmer sur un morceau en boucle. Fais défiler les réglages pour tout voir.', next: 'Suivant',
+  { route: '#/entrainement', allow: ['#/musique'], target: '#sheet', title: 'Régler avant de filmer', text: 'Le tempo du clic, la durée de chaque clip, l\'enchaînement (les clips se suivent jusqu\'à l\'arrêt), l\'écoute (casque ou haut-parleur) et la Musique, pour filmer sur un morceau en boucle. Fais défiler les réglages pour tout voir.', next: 'Suivant',
     // La feuille remonte en haut, plus compacte, pour laisser la place à la fiche.
     enter: () => {
       document.body.classList.add('tour-sheet');
@@ -26,8 +30,10 @@ const STEPS = [
     done: () => hash() === '#/trier' },
   { target: '.row-wrap a.row', title: 'Tes clips à trier', text: 'Tes clips arrivent ici. La corbeille supprime un raté sans l\'ouvrir. Ouvre ton clip.',
     done: () => { const m = hash().match(/^#\/clip\/(.+)$/); if (m) clipId = m[1]; return !!m; } },
-  { target: '.pl-speed', title: 'Analyser', text: 'Passe au ralenti : touche ×0.25. Tu as aussi l\'image par image, la boucle A-B et la découpe d\'un passage.',
-    done: () => { const c = document.querySelector('.pl-speed .chip[data-v="0.25"]'); return !!(c && c.getAttribute('aria-pressed') === 'true'); } },
+  // Exploration libre du lecteur : tout le lecteur répond au doigt.
+  { route: () => (clipId ? `#/clip/${clipId}` : null), target: '#player', card: 'bottom', title: 'Analyser',
+    // Place en bas de page pour pouvoir remonter les commandes du lecteur au-dessus de la fiche.
+    enter: () => document.body.classList.add('tour-room'), leave: () => document.body.classList.remove('tour-room'), text: 'Explore le lecteur : lecture, image par image (◀︎| |▶︎), vitesses de ×0.1 à ×2, repères A et B pour boucler un passage, « Créer un clip de A à B » pour en découper un. Fais défiler pour tout voir.', next: 'Suivant' },
   // Seulement si aucun agrès n'existe encore (nouvel utilisateur).
   { title: 'Les agrès', text: 'Tes clips se rangent par agrès (balles, massues, poi, staff…), puis dans des dossiers que tu crées toi-même (« 3 balles », « Cascade »…). Tu n\'as pas encore d\'agrès : tu vas créer le premier en rangeant ce clip, avec « + Nouvel agrès ». Choisis-le dans la liste ou tape le nom du tien.', next: 'Suivant',
     skip: async () => (await db.all('agres')).length > 0 },
@@ -43,51 +49,68 @@ const STEPS = [
   { title: 'À toi de jouer', text: 'C\'est tout ! Tu peux revoir cette visite dans les Réglages (l\'engrenage du Journal ou des Ressources).', next: 'Terminer' },
 ];
 
-let el = null;
+// ---------- Page Musique, sans morceau : inviter à en importer un ----------
+const MUSIC_EMPTY = [
+  { route: '#/musique', target: '#choose', title: 'La Musique', text: 'Importe un morceau de ton téléphone (MP3, M4A…) : il tournera en boucle pendant que tu filmes, avec le clic calé sur ses temps.', next: 'Plus tard',
+    done: () => exists('.mu-track') },
+];
 
-export async function maybeStartTour() {
-  if (!['#/', '#', '#/entrainement'].includes(hash())) return;
-  if (await db.getMeta('tourDone')) return;
-  setTimeout(() => startTour(), 900);
-}
+// ---------- Page Musique, avec un morceau : présentation de l'écran ----------
+const MUSIC = [
+  { route: '#/musique', target: '.mu-track', title: 'Ton morceau', text: 'Son tempo est détecté à l\'import. « Changer » pour en prendre un autre ou en importer un nouveau.', next: 'Suivant' },
+  { route: '#/musique', target: '[role="group"][aria-label="Mode"]', title: 'Deux façons de filmer', text: '« Un clip = la boucle » : chaque clip dure exactement la boucle et la musique repart à chaque clip. « Clips le long » : le morceau tourne en continu et un clip démarre toutes les 10 s, 30 s…', next: 'Suivant' },
+  { route: '#/musique', target: '#ov', title: 'Tout le morceau', text: 'La partie orange est la boucle. Glisse dessus pour la déplacer dans le morceau.', next: 'Suivant', skip: () => !exists('#ov') },
+  { route: '#/musique', target: '#zm', title: 'La boucle en détail', text: 'Tire les poignées A et B, glisse à l\'intérieur pour déplacer la boucle entière, pince pour zoomer, glisse à deux doigts pour faire défiler.', next: 'Suivant', skip: () => !exists('#zm') },
+  { route: '#/musique', target: '.mu-adjust', title: 'Longueur du clip', text: 'Les flèches ‹ › déplacent A ou B d\'une mesure. La longueur de la boucle est la durée de chacun de tes clips.', next: 'Suivant', skip: () => !exists('.mu-adjust') },
+  { route: '#/musique', target: '.mu-snap', title: 'Calage', text: 'A et B se posent sur les mesures (ou sur les temps), pour que la boucle retombe toujours en rythme.', next: 'Suivant', skip: () => !exists('.mu-snap') },
+  { route: '#/musique', target: '.mu-transport', title: 'Écouter', text: 'Écoute la boucle avec le clic. « Clic : non » coupe le son du clic, le point lumineux continue de battre.', next: 'Suivant' },
+  { route: '#/musique', target: '.mu-bpm', title: 'Tempo', text: 'Si le clic ne tombe pas juste : ÷2 ou ×2 quand l\'analyse a trouvé la moitié ou le double, et « Caler le clic » pour l\'aligner en tapant sur les temps.', next: 'Suivant' },
+  { route: '#/musique', target: '#use', title: 'C\'est prêt', text: '« Utiliser » te ramène à la caméra : la musique démarrera avec l\'enregistrement.', next: 'Terminer',
+    done: () => hash() !== '#/musique' },
+];
 
-// Relance depuis les Réglages : on revient d'abord sur l'écran d'entraînement.
-export function replayTour() {
-  location.hash = '#/entrainement';
-  setTimeout(() => startTour(), 900);
-}
+// ---------- Moteur ----------
+const running = new Map(); // clé → visite en cours
 
-export function startTour() {
-  if (el) el.remove();
-  let i = 0, since = Date.now(), checking = false, timer = null, raf = null, scrolled = false, returning = false;
-  clipId = null;
-  el = document.createElement('div');
+function runTour(key, steps, { flag, onEnd } = {}) {
+  if (running.has(key)) return;
+  let i = 0, since = Date.now(), checking = false, timer = null, raf = null, scrolled = false, returning = false, paused = false;
+  const el = document.createElement('div');
   el.className = 'tour';
   el.innerHTML = `<div class="tour-block"></div><div class="tour-spot"></div>
-    <div class="tour-card" role="dialog" aria-modal="false" aria-labelledby="tourTitle">
-      <div class="tour-step" id="tourStep"></div>
-      <h3 id="tourTitle"></h3>
-      <p id="tourText"></p>
-      <div class="tour-dots">${STEPS.map(() => '<i></i>').join('')}</div>
+    <div class="tour-card" role="dialog" aria-modal="false" aria-labelledby="tourTitle-${key}">
+      <div class="tour-step"></div>
+      <h3 id="tourTitle-${key}" class="tour-title"></h3>
+      <p class="tour-text"></p>
+      <div class="tour-dots">${steps.length > 1 ? steps.map(() => '<i></i>').join('') : ''}</div>
       <div class="tour-actions">
-        <button class="btn quiet" id="tourSkip">Passer la visite</button>
-        <button class="btn" id="tourStepSkip" hidden>Étape suivante</button>
-        <button class="btn primary" id="tourNext" hidden></button>
+        <button class="btn quiet tour-skip">Passer la visite</button>
+        <button class="btn tour-stepskip" hidden>Étape suivante</button>
+        <button class="btn primary tour-next" hidden></button>
       </div>
     </div>`;
   document.body.appendChild(el);
   const $ = s => el.querySelector(s);
   const spot = $('.tour-spot'), block = $('.tour-block'), card = $('.tour-card');
+  const routeOf = s => (typeof s.route === 'function' ? s.route() : s.route);
 
   // Éclaire la cible et ne laisse toucher qu'elle (le reste de l'écran est bloqué).
   const place = () => {
-    const s = STEPS[i], W = window.innerWidth, H = window.innerHeight;
+    const s = steps[i], W = window.innerWidth, H = window.innerHeight;
+    // Page autorisée « en excursion » : la visite s'efface jusqu'au retour.
+    const away = !!(s.allow && s.allow.includes(hash()));
+    if (away !== paused) {
+      paused = away;
+      el.style.display = away ? 'none' : '';
+      if (!away && s.enter) setTimeout(() => { try { s.enter(); } catch { /* ignoré */ } }, 700);
+    }
+    if (paused) return;
     const tg = s.target && [...document.querySelectorAll(s.target)].find(e => e.getClientRects().length);
     let r = tg && tg.getBoundingClientRect();
-    // Cible hors de l'écran (le voile empêche de faire défiler) : on l'amène au centre, une fois par étape.
-    if (r && r.width && !scrolled && (r.top < 70 || r.bottom > H - 90)) {
+    // Cible hors de l'écran (le voile empêche de faire défiler) : on l'amène à l'écran, une fois par étape.
+    if (r && r.width && !scrolled && (r.top < 70 || (r.bottom > H - 90 && r.height < H * 0.6))) {
       scrolled = true;
-      tg.scrollIntoView({ block: 'center' });
+      tg.scrollIntoView({ block: r.height > H * 0.5 ? 'start' : 'center' });
       r = tg.getBoundingClientRect();
     }
     if (r && r.width) {
@@ -95,76 +118,116 @@ export function startTour() {
       Object.assign(spot.style, { display: 'block', left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
       block.style.clipPath = `path(evenodd, "M0 0H${W}V${H}H0Z M${x} ${y}H${x + w}V${y + h}H${x}Z")`;
       el.classList.add('has-spot');
-      card.classList.toggle('top', r.top + r.height / 2 > H / 2);
+      // Fiche du côté où il y a le plus de place.
+      card.classList.toggle('top', s.card ? s.card === 'top' : r.top > H - r.bottom);
     } else {
       spot.style.display = 'none';
       block.style.clipPath = 'none';
       el.classList.remove('has-spot');
       card.classList.remove('top');
     }
-    // Une fenêtre de l'appli est ouverte (choix d'agrès, ajout…) : elle passe devant, la fiche s'efface.
+    // Une fenêtre de l'appli est ouverte (choix d'agrès, ajout…) : elle passe devant, la fiche reste lisible en haut.
     el.classList.toggle('behind', !!document.getElementById('modal').open);
   };
 
   const show = () => {
-    const s = STEPS[i];
+    const s = steps[i];
     since = Date.now(); scrolled = false;
     if (s.enter) try { s.enter(); } catch { /* ignoré */ }
-    $('#tourStep').textContent = `${i + 1} / ${STEPS.length}`;
-    $('#tourTitle').textContent = s.title;
-    $('#tourText').textContent = s.text;
+    $('.tour-step').textContent = steps.length > 1 ? `${i + 1} / ${steps.length}` : '';
+    $('.tour-title').textContent = s.title;
+    $('.tour-text').textContent = s.text;
     el.querySelectorAll('.tour-dots i').forEach((d, k) => d.classList.toggle('on', k === i));
-    $('#tourNext').hidden = !s.next;
-    if (s.next) $('#tourNext').textContent = s.next;
-    $('#tourSkip').hidden = i === STEPS.length - 1;
-    $('#tourStepSkip').hidden = true;
+    $('.tour-next').hidden = !s.next;
+    if (s.next) $('.tour-next').textContent = s.next;
+    $('.tour-skip').hidden = steps.length < 2 || i === steps.length - 1;
+    $('.tour-stepskip').hidden = true;
     place();
   };
 
+  const leaveStep = () => { const l = steps[i].leave; if (l) try { l(); } catch { /* ignoré */ } };
   const advance = async () => {
-    const leave = STEPS[i].leave;
-    if (leave) try { leave(); } catch { /* ignoré */ }
-    if (i >= STEPS.length - 1) { end(); return; }
+    leaveStep();
+    if (i >= steps.length - 1) { end(); return; }
     i++;
-    // Étape inutile dans cette situation (ex. présentation des agrès quand il y en a déjà) : on la saute.
-    while (STEPS[i].skip && i < STEPS.length - 1 && await STEPS[i].skip()) i++;
+    // Étape inutile dans cette situation : on la saute.
+    while (steps[i].skip && i < steps.length - 1 && await steps[i].skip()) i++;
     show();
   };
 
-  // Vérifie régulièrement si le geste demandé a été fait.
+  // Vérifie régulièrement si le geste demandé a été fait, et que l'on est sur la bonne page.
   const tick = async () => {
-    if (!el || checking) return;
-    const s = STEPS[i];
-    if (!s.done && !s.route) return;
+    if (!running.has(key) || checking || paused) return;
+    const s = steps[i], route = routeOf(s);
+    if (!s.done && !route) return;
     checking = true;
     let ok = false;
     try { ok = s.done ? await s.done() : false; } catch { ok = false; }
     checking = false;
-    if (!el) return;
+    if (!running.has(key)) return;
     if (ok) { advance(); return; }
-    // On a quitté la page de l'étape (lien touché par mégarde…) : on y revient, et l'étape reprend.
-    if (s.route && hash() !== s.route && !returning) {
+    // Page quittée (hors excursion autorisée) : on y revient, et l'étape reprend.
+    if (route && hash() !== route && !(s.allow && s.allow.includes(hash())) && !returning) {
       returning = true;
-      location.hash = s.route;
-      setTimeout(() => { returning = false; if (el && s.enter) try { s.enter(); } catch { /* ignoré */ } }, 900);
+      location.hash = route;
+      setTimeout(() => { returning = false; if (running.has(key) && s.enter) try { s.enter(); } catch { /* ignoré */ } }, 900);
     }
     // Rien ne bouge depuis un moment (caméra refusée, clip trop court…) : on propose de sauter l'étape.
-    if (s.done && Date.now() - since > 9000) $('#tourStepSkip').hidden = false;
+    if (s.done && !s.next && Date.now() - since > 9000) $('.tour-stepskip').hidden = false;
   };
-  const loop = () => { if (!el) return; place(); raf = requestAnimationFrame(loop); };
+  const loop = () => { if (!running.has(key)) return; place(); raf = requestAnimationFrame(loop); };
 
   const end = () => {
     clearInterval(timer); cancelAnimationFrame(raf);
     window.removeEventListener('hashchange', tick);
-    if (el) el.remove(); el = null;
-    document.body.classList.remove('tour-sheet');
-    db.setMeta('tourDone', true);
+    el.remove(); running.delete(key);
+    if (flag) db.setMeta(flag, true);
+    if (onEnd) onEnd();
   };
-  $('#tourSkip').onclick = () => { const l = STEPS[i].leave; if (l) try { l(); } catch { /* ignoré */ } end(); };
-  $('#tourStepSkip').onclick = advance;
-  $('#tourNext').onclick = advance;
+  $('.tour-skip').onclick = () => { leaveStep(); end(); };
+  $('.tour-stepskip').onclick = advance;
+  $('.tour-next').onclick = advance;
   window.addEventListener('hashchange', tick);
   timer = setInterval(tick, 300);
+  running.set(key, { end });
   show();
   loop();
+}
+
+// ---------- Points d'entrée ----------
+export async function maybeStartTour() {
+  if (!['#/', '#', '#/entrainement'].includes(hash())) return;
+  if (await db.getMeta('tourDone')) return;
+  setTimeout(() => startTour(), 900);
+}
+
+export function startTour() {
+  clipId = null;
+  if (running.has('main')) running.get('main').end();
+  runTour('main', MAIN, {
+    flag: 'tourDone',
+    onEnd: () => document.body.classList.remove('tour-sheet', 'tour-room'),
+  });
+}
+
+// Relance depuis les Réglages : on revient d'abord sur l'écran d'entraînement. La présentation
+// de la page Musique sera aussi remontrée à sa prochaine ouverture.
+export async function replayTour() {
+  await db.setMeta('tourMusicDone', false);
+  await db.setMeta('tourMusicIntroDone', false);
+  location.hash = '#/entrainement';
+  setTimeout(() => startTour(), 900);
+}
+
+// Appelée par la page Musique à chaque affichage : présentation à la première visite.
+export async function musicTour(hasMusic) {
+  if (running.has('music') || running.has('musicEmpty')) return;
+  if (hasMusic) {
+    if (await db.getMeta('tourMusicDone')) return;
+    setTimeout(() => { if (hash() === '#/musique' && exists('.mu-track')) runTour('music', MUSIC, { flag: 'tourMusicDone' }); }, 500);
+  } else {
+    if (await db.getMeta('tourMusicIntroDone')) return;
+    // Une fois un morceau importé, la présentation de l'écran prend le relais.
+    setTimeout(() => { if (hash() === '#/musique' && exists('#choose')) runTour('musicEmpty', MUSIC_EMPTY, { flag: 'tourMusicIntroDone', onEnd: () => { if (exists('.mu-track')) musicTour(true); } }); }, 500);
+  }
 }

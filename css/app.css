@@ -272,7 +272,8 @@ body.dragging .drop-up { display: grid; }
 .tour-dots i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--text) 25%, transparent); }
 .tour-dots i.on { background: var(--accent); width: 18px; border-radius: 4px; }
 .tour-actions { display: flex; gap: 8px; align-items: center; }
-.tour-actions #tourSkip { margin-right: auto; padding: 0 6px; color: var(--text-2); }
+.tour-actions .tour-skip { margin-right: auto; padding: 0 6px; color: var(--text-2); }
+.tour-actions .tour-next { margin-left: auto; }
 .tour-actions .btn { min-height: 44px; }
 body.tour-sheet .sheet { top: calc(64px + env(safe-area-inset-top)); bottom: auto; max-height: 44vh; }
-body.tour-sheet #musicBtn { pointer-events: none; }
+body.tour-room #view { padding-bottom: 60vh; }
