@@ -4,6 +4,7 @@ import * as db from './db.js';
 import { applyTheme } from './theme.js';
 import { migrate, purgeDeleted } from './data.js';
 import { notFound } from './ui.js';
+import { maybeStartTour } from './tour.js';
 import { recorder } from './views/train.js';
 import { musique } from './views/musique.js';
 import { trier, journalHome, journalFolder, clipView } from './views/journal.js';
@@ -56,7 +57,8 @@ window.addEventListener('hashchange', route);
   try { await purgeDeleted(); } catch (err) { console.warn(err); }
   try { await migrate(); } catch (err) { console.warn('Migration impossible', err); }
   db.askPersistence();
-  route();
+  await route();
+  maybeStartTour();
 })();
 
 // Fonctionnement hors ligne

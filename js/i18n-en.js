@@ -122,6 +122,26 @@ export const EN = {
   'Archive compressée : seules les archives Juglog sont lues': 'Compressed archive: only Juglog archives can be read',
   'Ce fichier n\'est pas une sauvegarde de Juglog.': 'This file is not a Juglog backup.', 'Aucun clip pour l\'instant.': 'No clips yet.',
   'L\'appli s\'affiche dans la langue du téléphone.': 'The app follows the phone’s language.',
+  'Aide': 'Help', 'Revoir la visite guidée': 'Replay the guided tour',
+
+  // Visite guidée
+  'Passer': 'Skip', 'Précédent': 'Back', 'Suivant': 'Next', 'C\'est parti': 'Let’s go',
+  'Bienvenue dans Juglog': 'Welcome to Juglog',
+  'Filme de courts clips pendant que tu t\'entraînes, analyse-les, range-les. Voici l\'essentiel en une minute.': 'Film short clips while you train, analyse them, file them. Here are the essentials in one minute.',
+  'Filmer': 'Film',
+  'Appuie pour lancer l\'enregistrement : un décompte, puis les clips s\'enchaînent tout seuls jusqu\'à ce que tu appuies à nouveau.': 'Tap to start recording: a countdown, then clips follow one another until you tap again.',
+  'Tempo et réglages': 'Tempo and settings',
+  'Le métronome, la durée des clips et la musique : choisis un morceau, il tourne en boucle avec le clic calé sur ses temps.': 'The metronome, clip length and music: choose a track and it loops, with the click locked to its beats.',
+  'Trier': 'Sort',
+  'À l\'arrêt, tes clips t\'attendent ici. Supprime les ratés d\'un geste, ouvre les autres pour les nommer.': 'When you stop, your clips wait here. Delete the failed takes in one tap, open the others to name them.',
+  'Analyser': 'Analyse',
+  'Dans un clip : ralenti, image par image, boucle A-B, découpe d\'un passage, et comparaison côte à côte avec un autre clip.': 'In a clip: slow motion, frame by frame, A-B loop, cutting out a section, and side-by-side comparison with another clip.',
+  'Ranger': 'File',
+  'Range tes clips par agrès, puis dans tes propres dossiers. Un appui long réorganise la liste.': 'File your clips by prop, then into your own folders. A long press reorders the list.',
+  'Apprendre': 'Learn',
+  'Garde ici tes vidéos de référence et tes liens de tutoriels. Sur Android, partage une vidéo ou un lien vers Juglog pour l\'ajouter.': 'Keep your reference videos and tutorial links here. On Android, share a video or link to Juglog to add it.',
+  'À toi de jouer': 'Your turn',
+  'Tu peux revoir cette visite à tout moment dans les Réglages (l\'engrenage du Journal).': 'You can replay this tour any time in Settings (the gear in the Journal).',
 };
 
 // Textes composés (nombres, noms insérés…) : expression régulière sur le texte entier → traduction.

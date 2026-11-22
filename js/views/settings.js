@@ -4,6 +4,7 @@ import { exportData, importData, exportVideos, importVideos, videoStats } from '
 import { setView, toast, fmtBytes } from '../ui.js';
 import { applyTheme } from '../theme.js';
 import { langChoice, setLangChoice } from '../i18n.js';
+import { replayTour } from '../tour.js';
 
 // ---------- Réglages ----------
 export async function settings() {
@@ -60,11 +61,15 @@ export async function settings() {
       <span class="small muted">Pour tout restaurer sur un téléphone neuf : importe d'abord la sauvegarde du classement, puis les archives de vidéos.</span>
     </div>
 
+    <h3 class="section-title">Aide</h3>
+    <div class="group"><button class="btn block" id="tour">Revoir la visite guidée</button></div>
+
     <h3 class="section-title">À propos</h3>
     <div class="small muted">Juglog<br>Le logo : une cruche arrose un vieux tronc, et une pousse grandit à l'autre bout.</div>`;
 
   const v = setView({ title: 'Réglages', back: '#/journal', tab: 'journal', body });
 
+  v.querySelector('#tour').onclick = () => replayTour();
   v.querySelectorAll('#lang button').forEach(b => {
     b.onclick = () => { if (b.dataset.l === langChoice()) return; setLangChoice(b.dataset.l); location.reload(); };
   });
