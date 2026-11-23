@@ -1,0 +1,141 @@
+// Comparaison de deux clips : lecture synchronisée, vitesse et image par image communes,
+// avec un repère par clip pour caler le départ du geste.
+import * as db from '../db.js';
+import { allClips, allRefs, loadClipVideo } from '../data.js';
+import { setView, onLeave, esc, toast, notFound, clipLabel } from '../ui.js';
+
+const fmt = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60); return `${m}:${(t - m * 60).toFixed(2).padStart(5, '0')}`; };
+const SPEEDS = [0.1, 0.25, 0.5, 1];
+
+// Choix d'un clip (boîte de dialogue), les plus récents d'abord.
+export async function pickClip(excludeId) {
+  const [clips, refs] = await Promise.all([allClips(), allRefs()]);
+  const list = [...clips, ...refs.filter(r => r.kind !== 'lien')].filter(c => c.id !== excludeId).slice(0, 80);
+  const d = document.getElementById('modal');
+  d.innerHTML = `<h3>Comparer avec…</h3>
+    <div class="pick-list">${list.length ? list.map(c => `<button class="pick clip-pick" data-id="${c.id}">
+        ${c.thumb ? `<img class="clip-thumb" src="${c.thumb}" alt="" style="width:64px;height:40px">` : ''}
+        <span>${esc(clipLabel(c))}<small>${c.ref ? 'Référence' : c.bpm ? `${c.bpm} BPM` : ''}</small></span></button>`).join('')
+      : '<small class="muted">Pas d\'autre clip à comparer pour l\'instant.</small>'}</div>
+    <div class="btn-row"><button class="btn" value="cancel" style="grid-column:1/-1">Annuler</button></div>`;
+  return new Promise(resolve => {
+    d.querySelectorAll('.clip-pick').forEach(b => { b.onclick = () => { d.close(); resolve(b.dataset.id); }; });
+    d.querySelector('[value=cancel]').onclick = () => { d.close(); resolve(null); };
+    d.oncancel = () => resolve(null);
+    d.showModal();
+  });
+}
+
+export async function compare(idA, idB) {
+  const [ca, cb] = await Promise.all([db.get('clips', idA), db.get('clips', idB)]);
+  if (!ca || !cb) return notFound();
+  const [fileA, fileB] = await Promise.all([loadClipVideo(ca), loadClipVideo(cb)]);
+  if (!fileA || !fileB) return notFound();
+  const urls = [URL.createObjectURL(fileA), URL.createObjectURL(fileB)];
+
+  const pane = (i, c) => `
+    <div class="cmp-pane" data-i="${i}">
+      <div class="cmp-head"><span class="cmp-name">${esc(clipLabel(c))}</span><button class="btn cmp-change" data-i="${i}">Changer</button></div>
+      <div class="pl-stage"><video src="${urls[i]}" playsinline preload="auto" muted></video></div>
+      <div class="cmp-row">
+        <span class="cmp-time">0:00.00</span>
+        <input class="cmp-seek" type="range" min="0" max="1" step="0.001" value="0" aria-label="Position">
+        <button class="btn cmp-mark" aria-label="Poser le repère">⚑ <span>repère</span></button>
+      </div>
+    </div>`;
+
+  const body = `
+    <div class="cmp">
+      ${pane(0, ca)}${pane(1, cb)}
+      <div class="pl-ctrl">
+        <button class="btn" id="back" aria-label="Image précédente">◀︎|</button>
+        <button class="btn primary" id="play" aria-label="Lecture">▶</button>
+        <button class="btn" id="fwd" aria-label="Image suivante">|▶︎</button>
+        <button class="btn" id="rewind" aria-label="Retour aux repères">⏮</button>
+      </div>
+      <div class="chips pl-speed" role="group" aria-label="Vitesse">${SPEEDS.map(v => `<button class="chip" data-v="${v}" aria-pressed="${v === 1}">×${v}</button>`).join('')}</div>
+      <label class="check" style="margin-top:6px"><input type="checkbox" id="snd"><span>Son du clip du haut</span></label>
+      <p class="muted small">Pose un repère ⚑ sur chaque clip au moment où le geste commence : la lecture et « ⏮ » repartent de ces repères.</p>
+    </div>`;
+
+  const v = setView({ title: 'Comparer', back: ca.ref ? `#/ressource/${idA}` : `#/clip/${idA}`, tab: ca.ref ? 'resources' : 'journal', body });
+  const vids = [...v.querySelectorAll('video')];
+  const marks = [0, 0];
+  // Un segment ne lit qu'un passage de sa vidéo : off = début dans le fichier, len = longueur (null = tout).
+  const off = [ca.start || 0, cb.start || 0];
+  const len = [ca.end != null ? ca.end - (ca.start || 0) : null, cb.end != null ? cb.end - (cb.start || 0) : null];
+  const L = i => len[i] ?? (isFinite(vids[i].duration) ? vids[i].duration : 0);
+  const at = i => Math.max(0, vids[i].currentTime - off[i]);
+  const goto = (i, t) => { vids[i].currentTime = off[i] + Math.min(Math.max(0, t), L(i) || t); };
+  let fd = 1 / 30, raf = 0, dead = false;
+  vids.forEach((x, i) => { x.playbackRate = 1; if (off[i]) x.addEventListener('loadedmetadata', () => { x.currentTime = off[i]; }); });
+
+  const rewind = () => vids.forEach((x, i) => goto(i, marks[i]));
+  const playing = () => vids.some(x => !x.paused);
+  const toggle = () => {
+    if (playing()) { vids.forEach(x => x.pause()); return; }
+    vids.forEach((x, i) => { if (x.ended || at(i) >= L(i) - 0.05) goto(i, marks[i]); });
+    vids.forEach(x => x.play());
+  };
+  v.querySelector('#play').onclick = toggle;
+  v.querySelector('#rewind').onclick = () => { rewind(); };
+  vids.forEach(x => { x.onclick = toggle; });
+
+  v.querySelectorAll('.cmp-pane').forEach((pn, i) => {
+    const seek = pn.querySelector('.cmp-seek');
+    const setMax = () => { if (L(i)) seek.max = L(i); };
+    setMax();
+    vids[i].addEventListener('loadedmetadata', setMax); vids[i].addEventListener('durationchange', setMax);
+    seek.oninput = () => { vids[i].pause(); goto(i, +seek.value); };
+    pn.querySelector('.cmp-mark').onclick = e => {
+      marks[i] = at(i);
+      e.currentTarget.querySelector('span').textContent = fmt(marks[i]);
+      toast(`Repère posé à ${fmt(marks[i])}`);
+    };
+  });
+
+  // Image par image sur les deux clips à la fois
+  const step = dir => vids.forEach((x, i) => {
+    x.pause();
+    const t = (Math.round(x.currentTime / fd) + dir) * fd + fd * 0.3;
+    x.currentTime = Math.min(Math.max(off[i], t), off[i] + (L(i) || t));
+  });
+  const hold = (btn, dir) => {
+    let t1 = 0, t2 = 0;
+    const stop = () => { clearTimeout(t1); clearInterval(t2); };
+    btn.onpointerdown = e => { e.preventDefault(); step(dir); t1 = setTimeout(() => { t2 = setInterval(() => step(dir), 90); }, 400); };
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+  };
+  hold(v.querySelector('#back'), -1); hold(v.querySelector('#fwd'), 1);
+
+  v.querySelectorAll('.pl-speed .chip').forEach(c => {
+    c.onclick = () => {
+      vids.forEach(x => { x.playbackRate = +c.dataset.v; });
+      v.querySelectorAll('.pl-speed .chip').forEach(y => y.setAttribute('aria-pressed', y === c));
+    };
+  });
+  v.querySelector('#snd').onchange = e => { vids[0].muted = !e.target.checked; };
+
+  v.querySelectorAll('.cmp-change').forEach(b => {
+    b.onclick = async () => {
+      const i = +b.dataset.i;
+      const other = i === 0 ? idB : idA;
+      const chosen = await pickClip(other);
+      if (chosen) location.hash = i === 0 ? `#/comparer/${chosen}/${idB}` : `#/comparer/${idA}/${chosen}`;
+    };
+  });
+
+  const tick = () => {
+    if (dead) return;
+    v.querySelectorAll('.cmp-pane').forEach((pn, i) => {
+      if (len[i] != null && !vids[i].paused && at(i) >= len[i]) { vids[i].pause(); goto(i, len[i]); }
+      pn.querySelector('.cmp-time').textContent = fmt(at(i));
+      pn.querySelector('.cmp-seek').value = at(i);
+    });
+    v.querySelector('#play').textContent = playing() ? '⏸' : '▶';
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+
+  onLeave(() => { dead = true; cancelAnimationFrame(raf); vids.forEach(x => { x.pause(); x.removeAttribute('src'); x.load(); }); urls.forEach(u => URL.revokeObjectURL(u)); });
+}

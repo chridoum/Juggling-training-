@@ -2,7 +2,7 @@
 // Stratégie « réseau d'abord » : en ligne, on récupère toujours la dernière version ;
 // hors ligne, on sert la copie gardée en cache.
 
-const CACHE = 'juglog-v32';
+const CACHE = 'juglog-v33';
 const SHELL = [
   './',
   './index.html',
@@ -43,7 +43,8 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      // Seulement nos anciennes versions : ni le partage en attente, ni la version « Pratiques » (même domaine).
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('juglog-v') && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -66,6 +67,8 @@ async function stashShare(req) {
 
 self.addEventListener('fetch', e => {
   const req = e.request;
+  // La version « Pratiques » (sous-dossier) a son propre service worker : on ne s'en mêle pas.
+  if (new URL(req.url).pathname.includes('/pratiques/')) return;
   if (req.method === 'POST' && new URL(req.url).pathname.endsWith('/share')) {
     e.respondWith(stashShare(req).catch(() => Response.redirect(new URL('#/ressources', self.registration.scope).href, 303)));
     return;

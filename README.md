@@ -8,6 +8,10 @@ Application web installable (PWA) pour s'entraîner à la jonglerie et aux flow 
 
 Tout reste sur le téléphone : aucune donnée n'est envoyée sur internet.
 
+## Version « Pratiques » (essai)
+
+Une copie séparée, à l'adresse `/pratiques/`, ouvre l'appli à d'autres pratiques (danse, cirque aérien, musique, arts martiaux, magie, glisse…). Au premier lancement on choisit ses pratiques ; les « agrès » deviennent des « disciplines », groupées et filtrables par pratique. Elle a ses propres données et s'installe à part : elle ne touche pas à la version jonglerie.
+
 ## Installation sur Android
 
 1. Ouvrir l'adresse de l'appli dans Chrome.
