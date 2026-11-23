@@ -83,6 +83,7 @@ function runTour(key, steps, { flag, onEnd } = {}) {
       <div class="tour-step"></div>
       <h3 id="tourTitle-${key}" class="tour-title"></h3>
       <p class="tour-text"></p>
+      <button class="tour-more" hidden>Lire</button>
       <div class="tour-dots">${steps.length > 1 ? steps.map(() => '<i></i>').join('') : ''}</div>
       <div class="tour-actions">
         <button class="btn quiet tour-skip">Passer la visite</button>
@@ -120,15 +121,45 @@ function runTour(key, steps, { flag, onEnd } = {}) {
       block.style.clipPath = `path(evenodd, "M0 0H${W}V${H}H0Z M${x} ${y}H${x + w}V${y + h}H${x}Z")`;
       el.classList.add('has-spot');
       // Fiche du côté où il y a le plus de place.
-      card.classList.toggle('top', s.card ? s.card === 'top' : r.top > H - r.bottom);
     } else {
       spot.style.display = 'none';
       block.style.clipPath = 'none';
       el.classList.remove('has-spot');
-      card.classList.remove('top');
     }
-    // Une fenêtre de l'appli est ouverte (choix d'agrès, ajout…) : elle passe devant, la fiche reste lisible en haut.
-    el.classList.toggle('behind', !!document.getElementById('modal').open);
+    // Une fenêtre de l'appli est ouverte (choix d'agrès, ajout…) : elle passe devant, la fiche reste lisible au-dessus.
+    const dlg = document.getElementById('modal');
+    el.classList.toggle('behind', !!dlg.open);
+    fit(s, r && r.width ? r : null, dlg.open ? dlg.getBoundingClientRect() : null);
+  };
+
+  // Place la fiche dans la plus grande zone libre (au-dessus ou en dessous de l'élément éclairé,
+  // sans recouvrir les onglets) et limite sa hauteur à cette zone. Petits écrans : fiche compacte,
+  // et si la place manque vraiment, le texte se replie derrière « Lire ».
+  const fit = (s, r, dlg) => {
+    const H = window.innerHeight, GAP = 10;
+    const tb = document.querySelector('.tabbar');
+    const tbr = tb && tb.getClientRects().length ? tb.getBoundingClientRect() : null;
+    const topLim = 12, botLim = (tbr && tbr.top < H ? tbr.top : H) - 10;
+    let top, avail;
+    if (dlg) { top = true; avail = dlg.top - GAP - topLim; }
+    else if (s.card) { top = s.card === 'top'; avail = Math.min(H * 0.5, botLim - topLim); }
+    else if (r) {
+      const above = r.top - GAP - topLim, below = botLim - (r.bottom + GAP);
+      top = above > below; avail = Math.max(above, below);
+    } else { top = false; avail = botLim - topLim; }
+    card.classList.toggle('top', top);
+    card.style.top = top ? `${topLim}px` : '';
+    card.style.bottom = top ? '' : `${H - botLim}px`;
+    avail = Math.max(96, Math.floor(avail));
+    card.style.maxHeight = `${avail}px`;
+    card.classList.toggle('compact', avail < 330 || window.innerWidth < 380);
+    const fold = avail < 190 && !card.classList.contains('open');
+    card.classList.toggle('folded', fold);
+    $('.tour-more').hidden = !(fold || card.classList.contains('open'));
+    $('.tour-more').textContent = card.classList.contains('open') ? 'Masquer' : 'Lire';
+    // Texte plus long que la place : fondu en bas pour montrer qu'il défile.
+    const tx = $('.tour-text');
+    tx.classList.toggle('more', !fold && tx.scrollHeight > tx.clientHeight + 4 && tx.scrollTop + tx.clientHeight < tx.scrollHeight - 4);
   };
 
   const show = () => {
@@ -143,6 +174,7 @@ function runTour(key, steps, { flag, onEnd } = {}) {
     if (s.next) $('.tour-next').textContent = s.next;
     $('.tour-skip').hidden = steps.length < 2 || i === steps.length - 1;
     $('.tour-stepskip').hidden = true;
+    card.classList.remove('open');
     place();
   };
 
@@ -186,6 +218,8 @@ function runTour(key, steps, { flag, onEnd } = {}) {
     if (onEnd) onEnd();
   };
   $('.tour-skip').onclick = () => { leaveStep(); end(); };
+  // Fiche repliée : « Lire » déplie le texte par-dessus l'écran le temps de le lire.
+  $('.tour-more').onclick = () => { card.classList.toggle('open'); place(); };
   $('.tour-stepskip').onclick = advance;
   $('.tour-next').onclick = advance;
   window.addEventListener('hashchange', tick);
