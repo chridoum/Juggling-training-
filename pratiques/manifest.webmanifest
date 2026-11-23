@@ -1,7 +1,7 @@
 {
   "name": "Juglog Pratiques",
   "short_name": "Juglog+",
-  "description": "Entraînement vidéo pour la jonglerie, la danse, le cirque, la musique et d'autres pratiques",
+  "description": "Entraînement vidéo pour la jonglerie, la danse, le cirque, la magie et d'autres pratiques",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",

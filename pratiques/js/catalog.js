@@ -13,15 +13,17 @@ export const PRACTICES = [
     ['tissu', 'Tissu aérien'], ['trapeze', 'Trapèze'], ['cerceau-aerien', 'Cerceau aérien'], ['corde-lisse', 'Corde lisse'],
     ['sangles', 'Sangles'], ['mat-chinois', 'Mât chinois'], ['acro-sol', 'Acrobatie au sol'], ['equilibres', 'Équilibres'],
     ['main-a-main', 'Main à main'], ['trampoline', 'Trampoline'], ['fil', 'Fil'] ] },
-  { key: 'musique', name: 'Musique', items: [
+  // hidden : pratique mise de côté pour l'instant (absente du choix et des propositions,
+  // mais une discipline déjà créée garde son groupe).
+  { key: 'musique', name: 'Musique', hidden: true, items: [
     ['batterie', 'Batterie'], ['percussions', 'Percussions'], ['guitare', 'Guitare'], ['basse', 'Basse'], ['piano', 'Piano'],
     ['violon', 'Violon'], ['ukulele', 'Ukulélé'], ['beatbox', 'Beatbox'] ] },
-  { key: 'martial', name: 'Arts martiaux', items: [
+  { key: 'martial', name: 'Arts martiaux', hidden: true, items: [
     ['karate', 'Karaté'], ['kung-fu', 'Kung-fu'], ['tai-chi', 'Taï-chi'], ['capoeira', 'Capoeira'], ['judo', 'Judo'],
     ['boxe', 'Boxe'], ['aikido', 'Aïkido'], ['taekwondo', 'Taekwondo'] ] },
   { key: 'magie', name: 'Magie', items: [
     ['cartes', 'Cartes'], ['cardistry', 'Cardistry'], ['pieces', 'Pièces'], ['close-up', 'Close-up'], ['manip-scene', 'Manipulation scénique'] ] },
-  { key: 'glisse', name: 'Glisse et sports urbains', items: [
+  { key: 'glisse', name: 'Glisse et sports urbains', hidden: true, items: [
     ['skate', 'Skateboard'], ['trottinette', 'Trottinette'], ['bmx', 'BMX'], ['roller', 'Roller'], ['parkour', 'Parkour'],
     ['slackline', 'Slackline'], ['freestyle-foot', 'Freestyle football'], ['corde-a-sauter', 'Corde à sauter'] ] },
 ].map(p => ({ ...p, items: p.items.map(([key, name]) => ({ key, name, practice: p.key })) }));
@@ -30,6 +32,8 @@ export const PRACTICES = [
 export const OTHER = { key: 'autre', name: 'Autre', items: [] };
 
 export const CATALOG = PRACTICES.flatMap(p => p.items);
+// Pratiques proposées (écran de choix, fenêtre « Nouvelle discipline »).
+export const VISIBLE = PRACTICES.filter(p => !p.hidden);
 
 export const CATEGORIES = {
   balles: ['3 balles', '4 balles', '5 balles'],

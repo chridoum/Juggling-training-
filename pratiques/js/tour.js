@@ -14,7 +14,7 @@ let clipId = null; // le clip filmé pendant la visite générale
 
 // ---------- Visite générale ----------
 const MAIN = [
-  { title: 'À quoi sert Juglog ?', text: 'Juglog t\'aide à progresser dans ta pratique grâce à la vidéo : jonglerie, danse, cirque, musique, arts martiaux…\n• Filme des essais courts, en rythme avec un métronome ou ta musique, sans avoir à découper de longues séances.\n• Revois-les au ralenti, image par image, et compare-les à tes essais précédents ou à une vidéo de référence.\n• Range-les par discipline pour retrouver tes mouvements et suivre tes progrès.\nTout reste sur ton téléphone : rien n\'est envoyé sur internet.', next: 'Suivant' },
+  { title: 'À quoi sert Juglog ?', text: 'Juglog t\'aide à progresser dans ta pratique grâce à la vidéo : jonglerie, danse, cirque aérien, acrobatie, magie…\n• Filme des essais courts, en rythme avec un métronome ou ta musique, sans avoir à découper de longues séances.\n• Revois-les au ralenti, image par image, et compare-les à tes essais précédents ou à une vidéo de référence.\n• Range-les par discipline pour retrouver tes mouvements et suivre tes progrès.\nTout reste sur ton téléphone : rien n\'est envoyé sur internet.', next: 'Suivant' },
   { title: 'Bienvenue dans Juglog', text: 'On va faire un tour pratique : régler la caméra, filmer un clip, l\'analyser et le ranger. Suis simplement la zone éclairée.', next: 'Commencer' },
   { route: '#/entrainement', target: '#settingsBtn', title: 'Les réglages', text: 'Commence par ouvrir les réglages de l\'enregistrement.',
     done: () => visible('#sheet:not([hidden])') },
@@ -36,7 +36,7 @@ const MAIN = [
     // Place en bas de page pour pouvoir remonter les commandes du lecteur au-dessus de la fiche.
     enter: () => document.body.classList.add('tour-room'), leave: () => document.body.classList.remove('tour-room'), text: 'Explore le lecteur : lecture, image par image (◀︎| |▶︎), vitesses de ×0.1 à ×2, repères A et B pour boucler un passage, « Créer un clip de A à B » pour en découper un. Fais défiler pour tout voir.', next: 'Suivant' },
   // Seulement si aucun agrès n'existe encore (nouvel utilisateur).
-  { title: 'Les disciplines', text: 'Tes clips se rangent par discipline (hip-hop, tissu aérien, balles, guitare…), puis dans des dossiers que tu crées toi-même (une chorégraphie, une figure, un exercice…). Tu n\'as pas encore de discipline : tu vas créer la première en rangeant ce clip, avec « + Nouvelle discipline ». Choisis-la dans la liste ou tape le nom de la tienne.', next: 'Suivant',
+  { title: 'Les disciplines', text: 'Tes clips se rangent par discipline (hip-hop, tissu aérien, balles, cartes…), puis dans des dossiers que tu crées toi-même (une chorégraphie, une figure, un exercice…). Tu n\'as pas encore de discipline : tu vas créer la première en rangeant ce clip, avec « + Nouvelle discipline ». Choisis-la dans la liste ou tape le nom de la tienne.', next: 'Suivant',
     skip: async () => (await db.all('agres')).length > 0 },
   { target: '#place', title: 'Ranger', text: 'Range ce clip : choisis une discipline (ou crée-la), puis « Ranger ici ».',
     done: async () => { if (!clipId) return true; const c = await db.get('clips', clipId); return !!(c && c.sorted); } },

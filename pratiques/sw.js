@@ -2,7 +2,7 @@
 // Stratégie « réseau d'abord » : en ligne, on récupère toujours la dernière version ;
 // hors ligne, on sert la copie gardée en cache.
 
-const CACHE = 'jp-v1';
+const CACHE = 'jp-v2';
 const SHELL = [
   './',
   './index.html',

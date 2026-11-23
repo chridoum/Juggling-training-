@@ -1,6 +1,6 @@
 // « Que pratiques-tu ? » : au premier lancement (avant la visite guidée), puis depuis les Réglages.
 // Le choix ne verrouille rien : il met en avant les disciplines de ces pratiques et règle quelques défauts.
-import { PRACTICES, OTHER } from '../catalog.js';
+import { VISIBLE, OTHER } from '../catalog.js';
 import { myPractices, setMyPractices } from '../data.js';
 import { loadPrefs, savePrefs } from '../music.js';
 import { setView, esc } from '../ui.js';
@@ -21,7 +21,7 @@ export async function pratiques() {
     title: 'Tes pratiques', back: first ? null : '#/reglages', tab: 'train',
     body: `
       <p class="muted pr-intro">Choisis une ou plusieurs pratiques : l'appli te proposera les bonnes disciplines. Tu pourras changer ça à tout moment dans les Réglages.</p>
-      <div class="pr-grid">${[...PRACTICES, OTHER].map(tile).join('')}</div>
+      <div class="pr-grid">${[...VISIBLE, OTHER].map(tile).join('')}</div>
       <button class="btn primary block pr-go" id="go">${first ? 'Continuer' : 'Enregistrer'}</button>`,
   });
   const go = v.querySelector('#go');
@@ -36,7 +36,7 @@ export async function pratiques() {
   });
   sync();
   go.onclick = async () => {
-    const list = [...PRACTICES, OTHER].map(p => p.key).filter(k => chosen.has(k));
+    const list = [...VISIBLE, OTHER].map(p => p.key).filter(k => chosen.has(k));
     await setMyPractices(list);
     document.body.classList.remove('first-run');
     if (first) {

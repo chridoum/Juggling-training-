@@ -1,6 +1,6 @@
 // À trier, Journal (agrès → dossiers → clips) et fiche d'un clip.
 import * as db from '../db.js';
-import { PRACTICES, OTHER, CATALOG, practiceOf, practiceByKey } from '../catalog.js';
+import { VISIBLE, practiceByKey } from '../catalog.js';
 import { groupAgres, filterBar, bindFilter, activeFilter, reorderWithinGroup, groupedPicks } from '../practice-ui.js';
 import {
   listAgres, reorderAgres, moveFolder, createAgres, renameAgres, deleteAgres, children, pathOf, subtree, addFolder, renameFolder, deleteFolder,
@@ -78,12 +78,12 @@ export async function trier() {
 export async function newAgresDialog(prefer = null) {
   const have = new Set((await db.all('agres')).map(a => a.catalogKey).filter(Boolean));
   const mine = (await myPractices()) || [];
-  const top = [...new Set([prefer, ...mine].filter(k => k && k !== 'tout' && k !== 'autre'))];
+  const top = [...new Set([prefer, ...mine].filter(k => k && k !== 'tout' && k !== 'autre' && VISIBLE.some(p => p.key === k)))];
   const block = k => {
     const p = practiceByKey(k), items = p.items.filter(c => !have.has(c.key));
     return items.length ? `<div class="pick-group">${esc(p.name)}</div>${items.map(c => `<button class="pick" data-key="${c.key}">${esc(c.name)}</button>`).join('')}` : '';
   };
-  const others = PRACTICES.map(p => p.key).filter(k => !top.includes(k));
+  const others = VISIBLE.map(p => p.key).filter(k => !top.includes(k));
   const d = document.getElementById('modal');
   d.innerHTML = `<h3>Nouvelle discipline</h3>
     <div class="pick-list">${top.map(block).join('')}
