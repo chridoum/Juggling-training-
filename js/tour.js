@@ -14,6 +14,7 @@ let clipId = null; // le clip filmé pendant la visite générale
 
 // ---------- Visite générale ----------
 const MAIN = [
+  { title: 'À quoi sert Juglog ?', text: 'Juglog t\'aide à progresser en jonglerie et en manipulation d\'objets grâce à la vidéo.\n• Filme des essais courts, en rythme avec un métronome ou ta musique, sans avoir à découper de longues séances.\n• Revois-les au ralenti, image par image, et compare-les à tes essais précédents ou à une vidéo de référence.\n• Range-les par agrès pour retrouver tes figures et suivre tes progrès.\nTout reste sur ton téléphone : rien n\'est envoyé sur internet.', next: 'Suivant' },
   { title: 'Bienvenue dans Juglog', text: 'On va faire un tour pratique : régler la caméra, filmer un clip, l\'analyser et le ranger. Suis simplement la zone éclairée.', next: 'Commencer' },
   { route: '#/entrainement', target: '#settingsBtn', title: 'Les réglages', text: 'Commence par ouvrir les réglages de l\'enregistrement.',
     done: () => visible('#sheet:not([hidden])') },

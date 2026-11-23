@@ -267,7 +267,7 @@ body.dragging .drop-up { display: grid; }
 .tour.behind .tour-card { bottom: auto; top: calc(18px + env(safe-area-inset-top)); }
 .tour-step { font-size: 13px; color: var(--text-2); }
 .tour-card h3 { margin: 4px 0 6px; font-size: 21px; }
-.tour-card p { margin: 0; font-size: 16px; line-height: 1.45; color: var(--text); }
+.tour-card p { margin: 0; font-size: 16px; line-height: 1.45; color: var(--text); white-space: pre-line; }
 .tour-dots { display: flex; flex-wrap: wrap; gap: 5px; margin: 14px 0 10px; }
 .tour-dots i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--text) 25%, transparent); }
 .tour-dots i.on { background: var(--accent); width: 18px; border-radius: 4px; }

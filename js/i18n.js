@@ -22,9 +22,12 @@ const norm = s => s.replace(/\s+/g, ' ').trim();
 // Traduit un texte français (entier). Renvoie le texte tel quel s'il n'y a rien à traduire.
 export function t(s) {
   if (LANG === 'fr' || s == null) return s;
-  const k = norm(String(s));
+  const has = x => Object.prototype.hasOwnProperty.call(EN, x);
+  const raw = String(s).trim();
+  if (has(raw)) return EN[raw];          // texte sur plusieurs lignes, retours à la ligne gardés
+  const k = norm(raw);
   if (!k || !/[A-Za-zÀ-ÿ]/.test(k)) return s;
-  if (Object.prototype.hasOwnProperty.call(EN, k)) return EN[k];
+  if (has(k)) return EN[k];
   for (const [re, fn] of EN_PATTERNS) {
     const m = k.match(re);
     if (m) return fn(m, t);
